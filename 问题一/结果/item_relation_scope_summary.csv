@@ -1,0 +1,3 @@
+﻿same_category,pair_count,median_abs_raw_rho,median_abs_residual_rho,raw_abs_rho_ge_0_5_count,residual_abs_rho_ge_0_5_count,residual_fdr_lt_0_05_count,robust_relation_count,median_joint_positive_days,median_jaccard,relation_scope
+False,9231,0.14596794097530738,0.10047431118199464,525,192,6051,192,30.0,0.06643356643356643,跨品类
+True,3330,0.14660748516702718,0.10004346987671041,274,78,2153,76,25.0,0.055778036600347816,同品类内部

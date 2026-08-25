@@ -1,0 +1,283 @@
+{
+  "method": {
+    "observed_dates": 1085,
+    "catalog_products_in_panel": 251,
+    "products_with_any_positive_sales": 246,
+    "primary_min_positive_days": 30,
+    "primary_eligible_products": 159,
+    "primary_pair_count": 12561,
+    "minimum_joint_positive_days_screen": 15,
+    "primary_correlation": "Spearman rank correlation on daily net sales",
+    "controlled_correlation": "Spearman rank correlation after residualizing month, weekday and linear trend",
+    "multiple_testing": "Benjamini-Hochberg FDR across all primary eligible pairs",
+    "sparsity_note": "zero sales on an observed store day are retained as zero; listing or stockout status is unavailable",
+    "interpretation_boundary": "association, not causation"
+  },
+  "counts": {
+    "primary_pairs_with_joint_positive_ge_15": 7537,
+    "raw_strong_after_overlap_and_fdr": 754,
+    "residual_strong_after_overlap_and_fdr": 268,
+    "residual_fdr_lt_0_05_all_pairs": 8204
+  },
+  "top_positive_residual_pairs": [
+    {
+      "product_name_a": "竹叶菜(份)",
+      "category_a": "花叶类",
+      "product_name_b": "红薯尖(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 52,
+      "jaccard_positive_days": 0.6265060240963856,
+      "raw_spearman_rho": 0.7759441107627234,
+      "residual_spearman_rho": 0.9321084694412388,
+      "residual_spearman_p_fdr": 0.0
+    },
+    {
+      "product_name_a": "青茄子(2)",
+      "category_a": "茄类",
+      "product_name_b": "紫茄子(1)",
+      "category_b": "茄类",
+      "joint_positive_days": 33,
+      "jaccard_positive_days": 0.5238095238095238,
+      "raw_spearman_rho": 0.692470381689556,
+      "residual_spearman_rho": 0.8741402510901143,
+      "residual_spearman_p_fdr": 0.0
+    },
+    {
+      "product_name_a": "龙牙菜",
+      "category_a": "花叶类",
+      "product_name_b": "黄白菜(1)",
+      "category_b": "花叶类",
+      "joint_positive_days": 52,
+      "jaccard_positive_days": 0.6419753086419753,
+      "raw_spearman_rho": 0.7719659967289945,
+      "residual_spearman_rho": 0.8496825597563235,
+      "residual_spearman_p_fdr": 1.1500778674544919e-299
+    },
+    {
+      "product_name_a": "红薯尖(份)",
+      "category_a": "花叶类",
+      "product_name_b": "青茄子(2)",
+      "category_b": "茄类",
+      "joint_positive_days": 31,
+      "jaccard_positive_days": 0.3924050632911392,
+      "raw_spearman_rho": 0.5614956959280397,
+      "residual_spearman_rho": 0.841957749796201,
+      "residual_spearman_p_fdr": 5.5038140073840215e-289
+    },
+    {
+      "product_name_a": "红薯尖(份)",
+      "category_a": "花叶类",
+      "product_name_b": "苋菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 37,
+      "jaccard_positive_days": 0.4805194805194805,
+      "raw_spearman_rho": 0.6421301315463063,
+      "residual_spearman_rho": 0.8368947132707826,
+      "residual_spearman_p_fdr": 2.599019820897548e-282
+    },
+    {
+      "product_name_a": "红薯尖(份)",
+      "category_a": "花叶类",
+      "product_name_b": "小白菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 33,
+      "jaccard_positive_days": 0.4583333333333333,
+      "raw_spearman_rho": 0.6295928124521448,
+      "residual_spearman_rho": 0.8278856286793383,
+      "residual_spearman_p_fdr": 6.723828194524578e-271
+    },
+    {
+      "product_name_a": "青茄子(2)",
+      "category_a": "茄类",
+      "product_name_b": "小白菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 32,
+      "jaccard_positive_days": 0.47761194029850745,
+      "raw_spearman_rho": 0.6389109254073728,
+      "residual_spearman_rho": 0.8192113503231423,
+      "residual_spearman_p_fdr": 1.6209627593715276e-260
+    },
+    {
+      "product_name_a": "紫茄子(1)",
+      "category_a": "茄类",
+      "product_name_b": "苋菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 31,
+      "jaccard_positive_days": 0.4492753623188406,
+      "raw_spearman_rho": 0.6229093433608688,
+      "residual_spearman_rho": 0.8105035039708036,
+      "residual_spearman_p_fdr": 1.2328091545898747e-250
+    },
+    {
+      "product_name_a": "青茄子(2)",
+      "category_a": "茄类",
+      "product_name_b": "苋菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 32,
+      "jaccard_positive_days": 0.42105263157894735,
+      "raw_spearman_rho": 0.5901898191983623,
+      "residual_spearman_rho": 0.8090592345951975,
+      "residual_spearman_p_fdr": 4.3493490811639435e-249
+    },
+    {
+      "product_name_a": "紫茄子(1)",
+      "category_a": "茄类",
+      "product_name_b": "小白菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 28,
+      "jaccard_positive_days": 0.4444444444444444,
+      "raw_spearman_rho": 0.6063195095291081,
+      "residual_spearman_rho": 0.8086054324911709,
+      "residual_spearman_p_fdr": 1.2364256577720877e-248
+    }
+  ],
+  "top_negative_residual_pairs": [
+    {
+      "product_name_a": "小青菜(1)",
+      "category_a": "花叶类",
+      "product_name_b": "小青菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 38,
+      "jaccard_positive_days": 0.06003159557661927,
+      "raw_spearman_rho": -0.24742522341359355,
+      "residual_spearman_rho": -0.5461350252680671,
+      "residual_spearman_p_fdr": 1.5435123575616213e-83
+    },
+    {
+      "product_name_a": "奶白菜",
+      "category_a": "花叶类",
+      "product_name_b": "奶白菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 58,
+      "jaccard_positive_days": 0.06118143459915612,
+      "raw_spearman_rho": -0.4828576267036172,
+      "residual_spearman_rho": -0.5378704023565428,
+      "residual_spearman_p_fdr": 1.400444693097585e-80
+    },
+    {
+      "product_name_a": "长线茄",
+      "category_a": "茄类",
+      "product_name_b": "螺丝椒(份)",
+      "category_b": "辣椒类",
+      "joint_positive_days": 123,
+      "jaccard_positive_days": 0.17251051893408134,
+      "raw_spearman_rho": -0.2169591369088265,
+      "residual_spearman_rho": -0.5046903030580322,
+      "residual_spearman_p_fdr": 1.6640940097789735e-69
+    },
+    {
+      "product_name_a": "长线茄",
+      "category_a": "茄类",
+      "product_name_b": "枝江青梗散花",
+      "category_b": "花菜类",
+      "joint_positive_days": 73,
+      "jaccard_positive_days": 0.10167130919220056,
+      "raw_spearman_rho": -0.24615812405553145,
+      "residual_spearman_rho": -0.4932177521994177,
+      "residual_spearman_p_fdr": 6.044716847124111e-66
+    },
+    {
+      "product_name_a": "云南生菜",
+      "category_a": "花叶类",
+      "product_name_b": "云南生菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 135,
+      "jaccard_positive_days": 0.12558139534883722,
+      "raw_spearman_rho": -0.7458919513630465,
+      "residual_spearman_rho": -0.4879457635882975,
+      "residual_spearman_p_fdr": 2.321933251404239e-64
+    },
+    {
+      "product_name_a": "长线茄",
+      "category_a": "茄类",
+      "product_name_b": "杏鲍菇(2)",
+      "category_b": "食用菌",
+      "joint_positive_days": 49,
+      "jaccard_positive_days": 0.07020057306590258,
+      "raw_spearman_rho": -0.292945463612908,
+      "residual_spearman_rho": -0.4558166535404183,
+      "residual_spearman_p_fdr": 2.979029948005138e-55
+    },
+    {
+      "product_name_a": "长线茄",
+      "category_a": "茄类",
+      "product_name_b": "奶白菜(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 38,
+      "jaccard_positive_days": 0.05757575757575758,
+      "raw_spearman_rho": -0.28190603585576846,
+      "residual_spearman_rho": -0.43997300092154623,
+      "residual_spearman_p_fdr": 4.1814830162651704e-51
+    },
+    {
+      "product_name_a": "青梗散花",
+      "category_a": "花菜类",
+      "product_name_b": "金针菇(袋)(2)",
+      "category_b": "食用菌",
+      "joint_positive_days": 18,
+      "jaccard_positive_days": 0.028081123244929798,
+      "raw_spearman_rho": -0.335420334985666,
+      "residual_spearman_rho": -0.4388028279040333,
+      "residual_spearman_p_fdr": 8.299641922194833e-51
+    },
+    {
+      "product_name_a": "金针菇(1)",
+      "category_a": "食用菌",
+      "product_name_b": "金针菇(袋)(2)",
+      "category_b": "食用菌",
+      "joint_positive_days": 20,
+      "jaccard_positive_days": 0.03110419906687403,
+      "raw_spearman_rho": -0.3286048623977089,
+      "residual_spearman_rho": -0.4377315456582526,
+      "residual_spearman_p_fdr": 1.5391984892131666e-50
+    },
+    {
+      "product_name_a": "小青菜(1)",
+      "category_a": "花叶类",
+      "product_name_b": "上海青(份)",
+      "category_b": "花叶类",
+      "joint_positive_days": 129,
+      "jaccard_positive_days": 0.19846153846153847,
+      "raw_spearman_rho": -0.10008102389516045,
+      "residual_spearman_rho": -0.4333603687387537,
+      "residual_spearman_p_fdr": 1.913024249085801e-49
+    }
+  ],
+  "scope_summary": [
+    {
+      "same_category": false,
+      "pair_count": 9231,
+      "median_abs_raw_rho": 0.14596794097530738,
+      "median_abs_residual_rho": 0.10047431118199464,
+      "raw_abs_rho_ge_0_5_count": 525,
+      "residual_abs_rho_ge_0_5_count": 192,
+      "residual_fdr_lt_0_05_count": 6051,
+      "robust_relation_count": 192,
+      "median_joint_positive_days": 30.0,
+      "median_jaccard": 0.06643356643356643,
+      "relation_scope": "跨品类"
+    },
+    {
+      "same_category": true,
+      "pair_count": 3330,
+      "median_abs_raw_rho": 0.14660748516702718,
+      "median_abs_residual_rho": 0.10004346987671041,
+      "raw_abs_rho_ge_0_5_count": 274,
+      "residual_abs_rho_ge_0_5_count": 78,
+      "residual_fdr_lt_0_05_count": 2153,
+      "robust_relation_count": 76,
+      "median_joint_positive_days": 25.0,
+      "median_jaccard": 0.055778036600347816,
+      "relation_scope": "同品类内部"
+    }
+  ],
+  "top100_stability": {
+    "candidate_count": 100,
+    "stable_count": 82,
+    "stable_definition": "at least 3 valid periods, same residual-correlation sign, and |rho| >= 0.3 in at least 3 periods"
+  },
+  "figures": [
+    "图表/item_relation_top_edges.png",
+    "图表/item_relation_scope_boxplot.png"
+  ]
+}

@@ -1,0 +1,4 @@
+﻿min_positive_days_threshold,eligible_product_count,eligible_pair_count,pair_count_with_joint_positive_ge_15,residual_fdr_lt_0_05_count,robust_abs_residual_rho_ge_0_5_count,top_robust_pairs
+30,159,12561,7537,5121,268,竹叶菜(份)-红薯尖(份) (0.932); 青茄子(2)-紫茄子(1) (0.874); 龙牙菜-黄白菜(1) (0.850)
+60,132,8646,6205,4272,182,龙牙菜-黄白菜(1) (0.850); 菜心(份)-上海青(份) (0.782); 云南生菜(份)-云南油麦菜(份) (0.760)
+90,116,6670,5232,3636,141,菜心(份)-上海青(份) (0.782); 云南生菜(份)-云南油麦菜(份) (0.760); 上海青(份)-小青菜(份) (0.726)

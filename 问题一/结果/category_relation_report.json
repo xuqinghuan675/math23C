@@ -1,0 +1,164 @@
+{
+  "method": {
+    "n_observed_dates": 1085,
+    "category_count": 6,
+    "pair_count": 15,
+    "primary_correlation": "Spearman rank correlation",
+    "linear_reference": "Pearson correlation",
+    "controls": "intercept + linear time trend + month fixed effects + weekday fixed effects",
+    "multiple_testing": "Benjamini-Hochberg FDR within each 15-pair family",
+    "confidence_interval": "approximate 95% Fisher-z interval",
+    "interpretation_boundary": "association, not causation"
+  },
+  "raw": {
+    "strong_abs_spearman_ge_0_5_count": 5,
+    "spearman_fdr_lt_0_05_count": 15,
+    "top_pairs": [
+      {
+        "category_a": "花叶类",
+        "category_b": "花菜类",
+        "spearman_rho": 0.6334371852442451,
+        "spearman_p_fdr": 1.3792737560046997e-121
+      },
+      {
+        "category_a": "水生根茎类",
+        "category_b": "食用菌",
+        "spearman_rho": 0.604824507099513,
+        "spearman_p_fdr": 2.3881983351808267e-108
+      },
+      {
+        "category_a": "花叶类",
+        "category_b": "食用菌",
+        "spearman_rho": 0.5964004317494502,
+        "spearman_p_fdr": 8.527865170788262e-105
+      },
+      {
+        "category_a": "花叶类",
+        "category_b": "辣椒类",
+        "spearman_rho": 0.5949146880350031,
+        "spearman_p_fdr": 2.8322760224708186e-104
+      },
+      {
+        "category_a": "辣椒类",
+        "category_b": "食用菌",
+        "spearman_rho": 0.5350408962228673,
+        "spearman_p_fdr": 6.626905310664701e-81
+      }
+    ],
+    "bottom_pairs": [
+      {
+        "category_a": "水生根茎类",
+        "category_b": "茄类",
+        "spearman_rho": -0.20991255512586354,
+        "spearman_p_fdr": 3.5767664973139025e-12
+      },
+      {
+        "category_a": "茄类",
+        "category_b": "食用菌",
+        "spearman_rho": -0.11439914573055901,
+        "spearman_p_fdr": 0.0001705502224459375
+      },
+      {
+        "category_a": "茄类",
+        "category_b": "辣椒类",
+        "spearman_rho": 0.10326851924189565,
+        "spearman_p_fdr": 0.0006573224557869329
+      },
+      {
+        "category_a": "花菜类",
+        "category_b": "茄类",
+        "spearman_rho": 0.19291614490474354,
+        "spearman_p_fdr": 1.706977550398491e-10
+      },
+      {
+        "category_a": "花叶类",
+        "category_b": "茄类",
+        "spearman_rho": 0.25218933217489936,
+        "spearman_p_fdr": 4.5527944410896565e-17
+      }
+    ]
+  },
+  "residual": {
+    "strong_abs_spearman_ge_0_5_count": 5,
+    "spearman_fdr_lt_0_05_count": 13,
+    "top_pairs": [
+      {
+        "category_a": "花叶类",
+        "category_b": "辣椒类",
+        "spearman_rho": 0.6763837356529229,
+        "spearman_p_fdr": 8.12075907234863e-145
+      },
+      {
+        "category_a": "花叶类",
+        "category_b": "食用菌",
+        "spearman_rho": 0.6287540373430569,
+        "spearman_p_fdr": 1.4193317568581158e-119
+      },
+      {
+        "category_a": "辣椒类",
+        "category_b": "食用菌",
+        "spearman_rho": 0.6206134835490983,
+        "spearman_p_fdr": 8.022379892364981e-116
+      },
+      {
+        "category_a": "花菜类",
+        "category_b": "辣椒类",
+        "spearman_rho": 0.5796836585113566,
+        "spearman_p_fdr": 7.706451888494852e-98
+      },
+      {
+        "category_a": "花叶类",
+        "category_b": "花菜类",
+        "spearman_rho": 0.5449092907814278,
+        "spearman_p_fdr": 1.8853705249468739e-84
+      }
+    ],
+    "bottom_pairs": [
+      {
+        "category_a": "水生根茎类",
+        "category_b": "茄类",
+        "spearman_rho": 0.00015211290947341838,
+        "spearman_p_fdr": 0.9960068254007101
+      },
+      {
+        "category_a": "花菜类",
+        "category_b": "茄类",
+        "spearman_rho": 0.050721448859726265,
+        "spearman_p_fdr": 0.10172475204675926
+      },
+      {
+        "category_a": "花叶类",
+        "category_b": "茄类",
+        "spearman_rho": 0.14350898016707336,
+        "spearman_p_fdr": 2.391274801538011e-06
+      },
+      {
+        "category_a": "茄类",
+        "category_b": "食用菌",
+        "spearman_rho": 0.1722123319967828,
+        "spearman_p_fdr": 1.422837713143251e-08
+      },
+      {
+        "category_a": "茄类",
+        "category_b": "辣椒类",
+        "spearman_rho": 0.1753944803241092,
+        "spearman_p_fdr": 8.225914185418743e-09
+      }
+    ]
+  },
+  "stability": {
+    "periods": [
+      2020,
+      2021,
+      2022,
+      2023
+    ],
+    "sign_consistent_count": 9,
+    "all_year_abs_rho_ge_0_3_count": 5,
+    "all_year_abs_rho_ge_0_5_count": 3
+  },
+  "figures": [
+    "图表/category_spearman_raw.png",
+    "图表/category_spearman_residual.png"
+  ]
+}
