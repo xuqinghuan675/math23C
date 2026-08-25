@@ -257,12 +257,42 @@ selected_df = pd.DataFrame(selected_rows)
 coeff_df = pd.DataFrame(coeff_rows)
 diagnostic_df = pd.DataFrame(diagnostic_rows)
 fit_df = pd.DataFrame(fit_rows)
+
+# 根据已选需求模型，在各品类平均价格和平均销量附近反推销量增加1千克所需的局部价格变化。
+# 这只是逆需求关系的局部敏感度，不把它当作成本加成定价结果。
+local_price_rows = []
+for selected in selected_rows:
+    category = selected["分类"]
+    frame = panel.loc[panel["分类名称"] == category]
+    reference_price = float(frame["日平均售价"].mean())
+    reference_quantity = float(frame["日总销量"].mean())
+    beta = float(selected["售价效应"])
+    if selected["模型"] == "线性模型":
+        price_change = 1.0 / beta
+        method = "线性需求关系：局部价格变化=1/售价系数"
+    else:
+        price_change = reference_price / (beta * reference_quantity)
+        method = "对数需求关系：在平均点处局部价格变化=平均价格/(价格弹性×平均销量)"
+    local_price_rows.append({
+        "分类": category,
+        "选择模型": selected["模型"],
+        "参考日平均售价": reference_price,
+        "参考日销量": reference_quantity,
+        "售价效应": beta,
+        "销量增加1千克对应的局部价格变化": price_change,
+        "稳健p值": selected["稳健p值"],
+        "校正后q值": selected["FDR校正后q值"],
+        "计算说明": method,
+        "解释边界": "需求模型的局部反推，不是成本加成定价结论",
+    })
+local_price_df = pd.DataFrame(local_price_rows)
 model_df.to_csv(RUN / "step4_模型比较.csv", index=False, encoding="utf-8-sig")
 price_df.to_csv(RUN / "step4_价格效应.csv", index=False, encoding="utf-8-sig")
 coeff_df.to_csv(RUN / "step4_系数明细.csv", index=False, encoding="utf-8-sig")
 selected_df.to_csv(RUN / "step6_模型选择.csv", index=False, encoding="utf-8-sig")
 diagnostic_df.to_csv(RUN / "step5_残差诊断.csv", index=False, encoding="utf-8-sig")
 fit_df.to_csv(RUN / "step6_拟合值.csv", index=False, encoding="utf-8-sig")
+local_price_df.to_csv(RUN / "step6_销量增加1千克的局部价格变化.csv", index=False, encoding="utf-8-sig")
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "SimSun"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -354,6 +384,19 @@ for _, row in selected_df.iterrows():
     lines.append(f"| {row['分类']} | {row['模型']} | {number(row['验证RMSE'], 2)} | {number(row['调整R²'], 3)} | {number(row['售价效应'], 4)} | {pvalue(row['稳健p值'])} | {pvalue(row['FDR校正后q值'])} |")
 lines += [
     "",
+    "## 销量增加一千克时的局部价格反推",
+    "",
+    "下表根据已选择的需求模型，在各品类平均价格和平均销量附近反推销量增加一千克对应的局部价格变化。负值表示需要降低价格才能支持销量增加；这不是成本加成定价结论。",
+    "",
+    "| 品类 | 选择模型 | 参考日平均售价 | 参考日销量 | 销量增加1千克对应的局部价格变化 |",
+    "|---|---|---:|---:|---:|",
+]
+for _, row in local_price_df.iterrows():
+    lines.append(f"| {row['分类']} | {row['选择模型']} | {number(row['参考日平均售价'], 2)} | {number(row['参考日销量'], 2)} | {number(row['销量增加1千克对应的局部价格变化'], 4)} |")
+lines += [
+    "",
+    "成本加成定价还需要可靠的单位成本、损耗率和目标加成率；当前结果只能说明需求模型下的局部价格敏感度。",
+    "",
     "## 第五步：残差诊断",
     "",
     "| 品类 | 选择模型 | 杜宾—沃森统计量 | 七阶滞后检验p值 | 异方差检验p值 | 诊断提示 |",
@@ -376,4 +419,3 @@ lines += [
 print("Step4-6完成")
 for _, row in selected_df.iterrows():
     print(f"{row['分类']}：{row['模型']}，售价效应={number(row['售价效应'], 4)}，稳健p={pvalue(row['稳健p值'])}，验证RMSE={number(row['验证RMSE'], 2)}")
-
