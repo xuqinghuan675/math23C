@@ -1,0 +1,215 @@
+{
+  "method": {
+    "measure": "net_sales_kg",
+    "observed_dates_used": 1085,
+    "missing_full_dates_excluded": 10,
+    "zero_for_missing_product_on_observed_date": true,
+    "descriptive_statistics": [
+      "mean",
+      "median",
+      "std",
+      "cv",
+      "quartiles",
+      "p95",
+      "skewness",
+      "excess_kurtosis",
+      "zero_rate"
+    ]
+  },
+  "category_order_by_total": [
+    "花叶类",
+    "辣椒类",
+    "食用菌",
+    "花菜类",
+    "水生根茎类",
+    "茄类"
+  ],
+  "top_products": [
+    {
+      "product_code": 102900011016701,
+      "product_name": "芜湖青椒(1)",
+      "category_name": "辣椒类",
+      "total_net_sales_kg": 28164.331000000002,
+      "total_share": 0.05979993864569526
+    },
+    {
+      "product_code": 102900005116714,
+      "product_name": "西兰花",
+      "category_name": "花菜类",
+      "total_net_sales_kg": 27537.228000000003,
+      "total_share": 0.05846844169217162
+    },
+    {
+      "product_code": 102900005116899,
+      "product_name": "净藕(1)",
+      "category_name": "水生根茎类",
+      "total_net_sales_kg": 27149.440000000002,
+      "total_share": 0.05764507050655614
+    },
+    {
+      "product_code": 102900005115960,
+      "product_name": "大白菜",
+      "category_name": "花叶类",
+      "total_net_sales_kg": 19187.218,
+      "total_share": 0.040739276185242236
+    },
+    {
+      "product_code": 102900005115779,
+      "product_name": "云南生菜",
+      "category_name": "花叶类",
+      "total_net_sales_kg": 15910.461,
+      "total_share": 0.033781899226533275
+    },
+    {
+      "product_code": 106949711300259,
+      "product_name": "金针菇(盒)",
+      "category_name": "食用菌",
+      "total_net_sales_kg": 15596.0,
+      "total_share": 0.03311421965315857
+    },
+    {
+      "product_code": 102900011030059,
+      "product_name": "云南生菜(份)",
+      "category_name": "花叶类",
+      "total_net_sales_kg": 14325.0,
+      "total_share": 0.030415567871986186
+    },
+    {
+      "product_code": 102900005116257,
+      "product_name": "紫茄子(2)",
+      "category_name": "茄类",
+      "total_net_sales_kg": 13602.001,
+      "total_share": 0.02888045965866136
+    },
+    {
+      "product_code": 102900005116530,
+      "product_name": "西峡香菇(1)",
+      "category_name": "食用菌",
+      "total_net_sales_kg": 11920.226999999999,
+      "total_share": 0.025309631648724764
+    },
+    {
+      "product_code": 102900011031100,
+      "product_name": "小米椒(份)",
+      "category_name": "辣椒类",
+      "total_net_sales_kg": 10833.0,
+      "total_share": 0.023001176038898872
+    }
+  ],
+  "category_concentration": [
+    {
+      "category_name": "花菜类",
+      "product_count_in_catalog": 5,
+      "product_count_with_observed_sales": 5,
+      "top1_share": 0.6593145297406284,
+      "top3_share": 0.999668011055093,
+      "top5_share": 1.0,
+      "top10_share": 1.0,
+      "hhi_on_category_shares": 0.49451239369072447
+    },
+    {
+      "category_name": "茄类",
+      "product_count_in_catalog": 10,
+      "product_count_with_observed_sales": 10,
+      "top1_share": 0.6063718433069651,
+      "top3_share": 0.8744368592740426,
+      "top5_share": 0.9731765403212281,
+      "top10_share": 1.0,
+      "hhi_on_category_shares": 0.40980793920767355
+    },
+    {
+      "category_name": "水生根茎类",
+      "product_count_in_catalog": 19,
+      "product_count_with_observed_sales": 18,
+      "top1_share": 0.669012686688884,
+      "top3_share": 0.8697699162470015,
+      "top5_share": 0.9400257305368799,
+      "top10_share": 0.992249716267469,
+      "hhi_on_category_shares": 0.47570283352681886
+    },
+    {
+      "category_name": "辣椒类",
+      "product_count_in_catalog": 45,
+      "product_count_with_observed_sales": 43,
+      "top1_share": 0.30750903586514006,
+      "top3_share": 0.5317303745206188,
+      "top5_share": 0.7067213223597878,
+      "top10_share": 0.8707990704828653,
+      "hhi_on_category_shares": 0.14251375721232395
+    },
+    {
+      "category_name": "食用菌",
+      "product_count_in_catalog": 72,
+      "product_count_with_observed_sales": 71,
+      "top1_share": 0.20497662371458356,
+      "top3_share": 0.42338130600311674,
+      "top5_share": 0.5206913163892912,
+      "top10_share": 0.6946329862403724,
+      "hhi_on_category_shares": 0.086059382671848
+    },
+    {
+      "category_name": "花叶类",
+      "product_count_in_catalog": 100,
+      "product_count_with_observed_sales": 99,
+      "top1_share": 0.09665083354566187,
+      "top3_share": 0.248954440472281,
+      "top5_share": 0.34610973455913563,
+      "top10_share": 0.5406207146531385,
+      "hhi_on_category_shares": 0.04256157214756929
+    }
+  ],
+  "month_extremes": [
+    {
+      "category_name": "花叶类",
+      "highest_month": 8,
+      "highest_month_index": 1.4401628040203054,
+      "lowest_month": 6,
+      "lowest_month_index": 0.8072759693156683
+    },
+    {
+      "category_name": "辣椒类",
+      "highest_month": 2,
+      "highest_month_index": 1.3989832507136803,
+      "lowest_month": 7,
+      "lowest_month_index": 0.7817164544883987
+    },
+    {
+      "category_name": "食用菌",
+      "highest_month": 1,
+      "highest_month_index": 1.5395302683069372,
+      "lowest_month": 6,
+      "lowest_month_index": 0.6196072829320022
+    },
+    {
+      "category_name": "花菜类",
+      "highest_month": 8,
+      "highest_month_index": 1.376106267683601,
+      "lowest_month": 3,
+      "lowest_month_index": 0.7199961758780988
+    },
+    {
+      "category_name": "水生根茎类",
+      "highest_month": 1,
+      "highest_month_index": 1.7893535505561646,
+      "lowest_month": 5,
+      "lowest_month_index": 0.2549392163768747
+    },
+    {
+      "category_name": "茄类",
+      "highest_month": 7,
+      "highest_month_index": 1.508755672346198,
+      "lowest_month": 12,
+      "lowest_month_index": 0.46243920295270746
+    }
+  ],
+  "figures": [
+    "图表\\category_boxplot.png",
+    "图表\\category_daily_trends.png",
+    "图表\\category_month_heatmap.png",
+    "图表\\category_spearman_raw.png",
+    "图表\\category_spearman_residual.png",
+    "图表\\item_relation_scope_boxplot.png",
+    "图表\\item_relation_top_edges.png",
+    "图表\\top20_product_total_sales.png"
+  ]
+}

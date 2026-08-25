@@ -1,0 +1,83 @@
+{
+  "source": {
+    "catalog": "D:\\数学建模国赛\\math23C\\2023年C题\\附件1.xlsx",
+    "flow": "D:\\数学建模国赛\\math23C\\2023年C题\\附件2.xlsx"
+  },
+  "catalog": {
+    "product_count": 251,
+    "category_count": 6,
+    "category_product_counts": {
+      "花叶类": 100,
+      "花菜类": 5,
+      "水生根茎类": 19,
+      "茄类": 10,
+      "辣椒类": 45,
+      "食用菌": 72
+    }
+  },
+  "flow": {
+    "raw_rows": 878503,
+    "sales_rows": 878042,
+    "return_rows": 461,
+    "observed_product_count": 246,
+    "unobserved_catalog_product_count": 5,
+    "min_date": "2020-07-01",
+    "max_date": "2023-06-30",
+    "calendar_day_count": 1095,
+    "observed_day_count": 1085,
+    "unobserved_day_count": 10,
+    "sales_qty_kg": 471275.839,
+    "return_qty_kg": -299.921,
+    "net_sales_kg": 470975.918,
+    "aggregated_item_key_count": 46599,
+    "aggregated_category_key_count": 6474
+  },
+  "panels": {
+    "daily_item_rows": 274845,
+    "daily_category_rows": 6570,
+    "missing_dates": [
+      "2021-02-11",
+      "2021-02-12",
+      "2022-01-31",
+      "2022-11-02",
+      "2022-11-04",
+      "2022-11-30",
+      "2022-12-01",
+      "2022-12-02",
+      "2022-12-03",
+      "2023-01-21"
+    ]
+  },
+  "category_totals": {
+    "花叶类": {
+      "sales_qty_kg": 198659.553,
+      "return_qty_kg": -138.575,
+      "net_sales_kg": 198520.978
+    },
+    "花菜类": {
+      "sales_qty_kg": 41789.777,
+      "return_qty_kg": -23.326,
+      "net_sales_kg": 41766.451
+    },
+    "水生根茎类": {
+      "sales_qty_kg": 40607.552,
+      "return_qty_kg": -26.199,
+      "net_sales_kg": 40581.353
+    },
+    "茄类": {
+      "sales_qty_kg": 22442.119,
+      "return_qty_kg": -10.337,
+      "net_sales_kg": 22431.782
+    },
+    "辣椒类": {
+      "sales_qty_kg": 91645.112,
+      "return_qty_kg": -56.483,
+      "net_sales_kg": 91588.629
+    },
+    "食用菌": {
+      "sales_qty_kg": 76131.726,
+      "return_qty_kg": -45.001,
+      "net_sales_kg": 76086.725
+    }
+  }
+}
