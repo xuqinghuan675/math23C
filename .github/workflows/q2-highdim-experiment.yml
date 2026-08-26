@@ -1,0 +1,41 @@
+name: Q2 High-Dim Experiment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '问题二/实验/高维约束内嵌优化.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pandas numpy openpyxl
+
+      - name: Run high-dimensional experiment
+        run: python "问题二/实验/高维约束内嵌优化.py"
+
+      - name: Commit experiment outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "问题二/实验/高维结果/"
+          if git diff --cached --quiet; then
+            echo "No generated changes."
+          else
+            git commit -m "重算问题二高维约束内嵌实验 [skip highdim-auto]"
+            git push
+          fi
