@@ -37,6 +37,7 @@ jobs:
             "问题二/结果/价格关系可靠性_分层稳健.csv" \
             "问题二/结果/基础需求模型回测_分层稳健.csv" \
             "问题二/结果/基础需求模型回测汇总_分层稳健.csv" \
+            "问题二/结果/基础需求预测器选择_分层稳健.csv" \
             "问题二/最终建模说明_分层稳健.md"
           if git diff --cached --quiet; then
             echo "No generated changes."
