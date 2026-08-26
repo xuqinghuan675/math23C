@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '问题二/实验/高维约束内嵌优化.py'
+      - '.github/workflows/q2-highdim-experiment.yml'
   workflow_dispatch:
 
 permissions:
