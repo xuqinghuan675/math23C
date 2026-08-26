@@ -174,7 +174,7 @@ v1.optimize_one = optimize_one_fair
 
 def main() -> None:
     v1.main()
-    fairness = """# v2 公平性修正\n\n"
+    fairness = "# v2 公平性修正\n\n"
     fairness += "v1 的主解码项 `tanh(z)` 有界，导致 R 越大可达到的 hidden 幅度越大；因此 v1 的维度比较混入了表示容量差异。\n\n"
     fairness += "v2 改用 `h=(Σz+0.15Σsin(z))/sqrt(R)`，所有 R 都可覆盖完整实数 hidden；同时使用 Newton 校准，让所有 R/seed 从完全相同的物理售价和补货方案起步。\n\n"
     fairness += "因此 v2 的 R 差异才主要反映高维过参数化对梯度搜索几何的影响。\n"
