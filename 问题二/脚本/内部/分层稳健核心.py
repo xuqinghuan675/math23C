@@ -3,15 +3,18 @@
 
 正式职责拆分：
 1. 基础需求：用全量有效净销量，仅根据星期、月份和可选趋势预测；
-2. 价格响应：正常销售数据上比较半对数与对数-对数模型，但定价主模型采用半对数；
-3. 半对数模型只有在滚动回测不过度劣化、价格系数显著为负且方向稳定时，才进入利润型定价；
+2. 价格响应：正常销售数据上比较三种函数形式：
+   - 半对数售价：log(D)=...+bP；
+   - 半对数加成：log(D)=...+bm，其中 m=P/C-1；
+   - 对数-对数售价：log(D)=...+b log(P)，仅作滚动预测基准；
+3. 两种可用于定价的半对数模型按滚动样本外 WAPE 竞争，且必须通过 HAC 显著性、
+   跨折方向稳定和“相对全体最佳模型不过度劣化”三重门槛；
 4. 对价格关系不可靠的品类，采用同星期条件中位加成；
 5. 所有品类均用随机需求分布下的损耗修正报童分位数确定补货量。
 
-选择半对数作为定价主响应不是为了制造内部最优点，而是因为
-log(D)=a+bP 的价格弹性 bP 会随价格变化；当 b<0 时，价格升高会逐渐增强需求收缩，
-避免常弹性模型在 |elasticity|<1 时产生无界提价倾向。对数-对数模型继续保留为
-滚动预测基准，用于检查半对数形式是否明显损失样本外拟合能力。
+加入“半对数加成”是因为题目明确给出商超采用成本加成定价。该模型使用零售商真正可控的
+加成率解释需求变化，可减少批发成本波动直接推高售价对价格系数的污染；最终是否采用仍由
+滚动回测决定，而不是为了得到内部最优点人工选择。
 """
 
 from __future__ import annotations
@@ -160,18 +163,23 @@ def base_demand_samples(
 
 
 # ---------------------------
-# 价格响应模型：半对数主模型 + 对数-对数基准
+# 价格响应：半对数售价 / 半对数加成 / 对数-对数售价基准
 # ---------------------------
+PRICE_RESPONSE_MODELS = ("半对数售价", "半对数加成", "对数-对数售价")
+PRICING_MODELS = ("半对数售价", "半对数加成")
 
-def _price_design(
+
+def _response_design(
     frame: pd.DataFrame,
     include_trend: bool,
     response_model: str,
 ) -> tuple[np.ndarray, list[str]]:
     x = pd.DataFrame(index=frame.index)
-    if response_model == "半对数":
+    if response_model == "半对数售价":
         x["价格项"] = frame["日平均售价"].astype(float)
-    elif response_model == "对数-对数":
+    elif response_model == "半对数加成":
+        x["价格项"] = frame["加成率"].astype(float)
+    elif response_model == "对数-对数售价":
         x["价格项"] = np.log(frame["日平均售价"].astype(float))
     else:
         raise ValueError(f"未知价格响应模型: {response_model}")
@@ -198,7 +206,7 @@ def _fit_price_response(
     response_model: str,
 ) -> dict:
     """OLS 点估计 + 7 阶 Newey-West/HAC 协方差。"""
-    x, names = _price_design(frame, include_trend, response_model)
+    x, names = _response_design(frame, include_trend, response_model)
     y = np.log(frame["日销售量"].astype(float).to_numpy())
     params = np.linalg.lstsq(x, y, rcond=None)[0]
     residuals = y - x @ params
@@ -236,7 +244,7 @@ def _fit_price_response(
 
 
 def _predict_price_response(spec: dict, frame: pd.DataFrame) -> np.ndarray:
-    x, names = _price_design(
+    x, names = _response_design(
         frame,
         bool(spec["含时间趋势"]),
         str(spec["价格响应模型"]),
@@ -247,17 +255,34 @@ def _predict_price_response(spec: dict, frame: pd.DataFrame) -> np.ndarray:
     return np.exp(eta) * float(spec["平滑还原因子"])
 
 
+def _reference_elasticity(spec: dict, frame: pd.DataFrame) -> float:
+    model = str(spec["价格响应模型"])
+    beta = float(spec["价格系数"])
+    if model == "半对数售价":
+        reference_price = float(frame["日平均售价"].median())
+        return float(beta * reference_price)
+    if model == "半对数加成":
+        reference_markup = float(frame["加成率"].median())
+        # m=P/C-1，成本固定时 dm/dlog(P)=P/C=1+m。
+        return float(beta * (1.0 + reference_markup))
+    if model == "对数-对数售价":
+        return beta
+    raise ValueError(f"未知价格响应模型: {model}")
+
+
 def price_response_backtest(
     panel_normal: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame, dict]:
-    """比较半对数/对数-对数及是否带趋势，并决定定价响应是否可靠。
+    """滚动比较价格响应函数，并只让可验证的半对数模型进入定价。
 
-    规则：
-    - 对数-对数是预测基准；半对数是唯一允许进入定价优化的函数形式；
-    - 每种函数内部仍由滚动 WAPE 选择是否保留趋势（趋势至少改善 5% 才保留）；
-    - 半对数最终规格必须 beta<0、HAC p<0.05，且至少 7/8 回测折价格系数为负；
-    - 同时半对数滚动 WAPE 不得比对数-对数基准恶化超过 max(0.01, 10%)；
-      若明显劣化，则不强行用它做定价，回退到条件中位加成。
+    每种函数先在“有/无时间趋势”中选择：趋势只有让滚动 WAPE 至少改善 5% 才保留。
+    然后在两种半对数定价模型之间选择，候选必须同时满足：
+    - 全样本价格系数 < 0；
+    - HAC p < 0.05；
+    - 至少 7/8 个滚动折价格系数为负；
+    - 该模型 WAPE 不高于三种函数总体最佳 WAPE + max(0.01, 10%×best_WAPE)。
+
+    若两个半对数候选都通过，选择 WAPE 更低者；都不通过则不做利润型价格搜索。
     """
     detail_rows: list[dict] = []
     summary_rows: list[dict] = []
@@ -271,10 +296,8 @@ def price_response_backtest(
         if not cutoffs:
             raise ValueError(f"{cat} 没有足够样本进行价格响应滚动回测")
 
-        chosen_by_form: dict[str, tuple[bool, float, list[float]]] = {}
-        full_by_form: dict[str, dict] = {}
-
-        for response_model in ("半对数", "对数-对数"):
+        chosen: dict[str, dict] = {}
+        for response_model in PRICE_RESPONSE_MODELS:
             scores: dict[bool, float] = {}
             fold_betas: dict[bool, list[float]] = {}
             for include_trend in (False, True):
@@ -315,9 +338,12 @@ def price_response_backtest(
             chosen_wape = float(scores[chosen_trend])
             chosen_betas = fold_betas[chosen_trend]
             full_spec = _fit_price_response(frame, chosen_trend, response_model)
-            chosen_by_form[response_model] = (chosen_trend, chosen_wape, chosen_betas)
-            full_by_form[response_model] = full_spec
-
+            chosen[response_model] = {
+                "含趋势": chosen_trend,
+                "WAPE": chosen_wape,
+                "回测价格系数": chosen_betas,
+                "规格": full_spec,
+            }
             summary_rows.append(
                 {
                     "品类": cat,
@@ -325,47 +351,80 @@ def price_response_backtest(
                     "最终含趋势": "是" if chosen_trend else "否",
                     "滚动WAPE": chosen_wape,
                     "全样本价格系数": float(full_spec["价格系数"]),
+                    "参考价处价格弹性": _reference_elasticity(full_spec, frame),
                     "全样本稳健p值": float(full_spec["稳健概率值"]),
                     "负向回测折数": int(sum(beta < 0 for beta in chosen_betas)),
                     "回测折数": int(len(chosen_betas)),
                 }
             )
 
-        semi_trend, semi_wape, semi_betas = chosen_by_form["半对数"]
-        loglog_trend, loglog_wape, _ = chosen_by_form["对数-对数"]
-        semi_spec = full_by_form["半对数"]
-        semi_negative = int(sum(beta < 0 for beta in semi_betas))
-        fold_count = int(len(semi_betas))
-        tolerance = max(0.01, 0.10 * loglog_wape)
-        prediction_ok = bool(semi_wape <= loglog_wape + tolerance)
-        statistical_ok = bool(
-            float(semi_spec["价格系数"]) < 0
-            and float(semi_spec["稳健概率值"]) < 0.05
-            and semi_negative >= max(1, fold_count - 1)
-        )
-        ok = bool(prediction_ok and statistical_ok)
-        reliable[cat] = ok
-        specs[cat] = semi_spec
+        best_wape = min(float(info["WAPE"]) for info in chosen.values())
+        tolerance = max(0.01, 0.10 * best_wape)
+        admissible: list[tuple[str, float]] = []
+        gate_info: dict[str, dict] = {}
+        for response_model in PRICING_MODELS:
+            info = chosen[response_model]
+            spec = info["规格"]
+            betas = info["回测价格系数"]
+            fold_count = len(betas)
+            negative_folds = int(sum(beta < 0 for beta in betas))
+            statistical_ok = bool(
+                float(spec["价格系数"]) < 0
+                and float(spec["稳健概率值"]) < 0.05
+                and negative_folds >= max(1, fold_count - 1)
+            )
+            prediction_ok = bool(float(info["WAPE"]) <= best_wape + tolerance + 1e-12)
+            gate_info[response_model] = {
+                "statistical_ok": statistical_ok,
+                "prediction_ok": prediction_ok,
+                "negative_folds": negative_folds,
+                "fold_count": fold_count,
+            }
+            if statistical_ok and prediction_ok:
+                admissible.append((response_model, float(info["WAPE"])))
 
-        # 为解释保留参考价处的点弹性；半对数弹性随价格变化，不再把 beta 本身称为弹性。
+        if admissible:
+            selected_model = min(admissible, key=lambda item: (item[1], item[0]))[0]
+            ok = True
+        else:
+            # 失败时仍保留预测较好的半对数规格供结果表解释，但不让其参与利润优化。
+            selected_model = min(
+                PRICING_MODELS,
+                key=lambda model: (float(chosen[model]["WAPE"]), model),
+            )
+            ok = False
+
+        selected_spec = dict(chosen[selected_model]["规格"])
+        selected_elasticity = _reference_elasticity(selected_spec, frame)
+        selected_spec["参考价处价格弹性"] = selected_elasticity
+        specs[cat] = selected_spec
+        reliable[cat] = ok
+
+        selected_gate = gate_info[selected_model]
+        price_wape = float(chosen["半对数售价"]["WAPE"])
+        markup_wape = float(chosen["半对数加成"]["WAPE"])
+        loglog_wape = float(chosen["对数-对数售价"]["WAPE"])
         reference_price = float(frame["日平均售价"].median())
-        reference_elasticity = float(semi_spec["价格系数"] * reference_price)
+        reference_markup = float(frame["加成率"].median())
         reliability_rows.append(
             {
                 "品类": cat,
-                "价格响应模型": "半对数",
-                "半对数价格系数": float(semi_spec["价格系数"]),
+                "入选价格响应模型": selected_model,
+                "价格响应系数": float(selected_spec["价格系数"]),
                 "参考中位售价": reference_price,
-                "参考价处价格弹性": reference_elasticity,
-                "稳健概率值": float(semi_spec["稳健概率值"]),
-                "负向回测折数": semi_negative,
-                "回测折数": fold_count,
-                "半对数滚动WAPE": semi_wape,
+                "参考中位加成率": reference_markup,
+                "参考价处价格弹性": selected_elasticity,
+                "稳健概率值": float(selected_spec["稳健概率值"]),
+                "负向回测折数": int(selected_gate["negative_folds"]),
+                "回测折数": int(selected_gate["fold_count"]),
+                "半对数售价滚动WAPE": price_wape,
+                "半对数加成滚动WAPE": markup_wape,
                 "对数-对数基准WAPE": loglog_wape,
-                "相对基准WAPE差": semi_wape - loglog_wape,
-                "预测不过度劣化": "是" if prediction_ok else "否",
+                "三模型最佳WAPE": best_wape,
+                "入选模型预测不过度劣化": "是" if selected_gate["prediction_ok"] else "否",
+                "入选模型统计稳定": "是" if selected_gate["statistical_ok"] else "否",
                 "价格关系可靠": "是" if ok else "否",
-                "处理": "半对数局部利润优化" if ok else "同星期条件中位加成",
+                "处理": f"{selected_model}局部稳健利润优化" if ok else "同星期条件中位加成",
             }
         )
 
@@ -412,23 +471,16 @@ def write_summary(
         "",
         "## 主结论",
         "",
-        "本版把‘预测这一天总共会卖多少’与‘改变正常售价后需求怎样变化’拆成两个模型：",
-        "",
-        "- 基础需求：使用全量有效净销量，只控制星期、月份和必要趋势；",
-        "- 价格响应：正常销售数据上以对数-对数作为预测基准，半对数作为定价主函数；",
-        "- 半对数只有在滚动预测不过度劣化、价格系数显著为负且跨折稳定时才进入利润优化；",
-        "- 价格关系可靠的品类：在同星期中央经营带内做局部利润优化；",
-        "- 价格关系不可靠的品类：采用同星期条件中位加成；",
-        "- 所有品类：使用损耗修正后的报童分位数确定补货量。",
+        "本版把‘预测这一天总共会卖多少’与‘零售商改变正常售价/加成后需求怎样变化’拆成两个模型。价格响应层同时比较半对数售价、半对数加成和对数-对数售价，其中只有两种半对数模型可以进入利润优化，并且必须通过滚动预测与稳健性门槛。",
         "",
         f"模型预计七天总利润：**{total_profit:.2f} 元**。",
         f"局部定价优化品类：{'、'.join(reliable_cats) if reliable_cats else '无'}。",
         f"保守中位定价品类：{'、'.join(conservative_cats) if conservative_cats else '无'}。",
         f"42 条策略中触及局部经营带上界：**{upper_hits} 条**。",
         "",
-        "## 为什么使用半对数定价响应",
+        "## 价格响应为何这样设计",
         "",
-        "对数-对数常弹性模型在绝对弹性小于 1 时，会让利润函数在较宽价格区间持续偏向高价，容易把最优解机械推到人为边界。半对数模型 log(D)=a+bP+controls 在 b<0 时的点弹性为 bP，会随价格上升而增强需求收缩，因此更适合有限价格区间内的经营定价。为避免为了得到内部峰值而牺牲拟合，本版仍把对数-对数作为滚动预测基准；半对数若样本外误差明显更差，则直接判定该品类不适合做利润型价格优化。",
+        "对数-对数常弹性模型在绝对弹性小于 1 时容易持续偏好更高价格，因此只作为样本外预测基准。半对数售价具有随价格上升而增强的点弹性；半对数加成则直接对应题目给出的成本加成定价机制，能把批发成本推动的被动涨价与零售商主动提高加成更好地区分。最终模型由滚动回测和显著稳定性共同决定。",
         "",
         "## 进价模型",
         "",
@@ -439,9 +491,7 @@ def write_summary(
         "",
         "## 论文表述边界",
         "",
-        "价格系数是控制星期、月份后的条件关联，不是严格因果；半对数相对于对数-对数的作用首先是改善定价函数的结构合理性，并不把观察性回归包装成因果效应。历史销量仍可能受缺货影响；题目没有给出库存、预算、货架容量和包装约束，因此按品类独立决策。所谓‘最优’均指在给定历史常规经营区间和模型假设下的局部稳健方案。",
-        "",
-        "完整 42 条结果见 `结果/七天六品类最终策略_分层稳健.csv`。",
+        "价格响应系数仍属于控制日历因素后的条件关联，不宣称严格因果；历史销量可能受缺货影响。题目未给出库存、预算、货架容量和包装约束，因此按品类独立决策。所谓‘最优’仅指历史常规经营区间和模型假设下的局部稳健方案。",
     ]
     (base.ROOT / "问题二" / "最终建模说明_分层稳健.md").write_text(
         "\n".join(lines), encoding="utf-8"
@@ -487,7 +537,7 @@ def main() -> None:
     print("价格可靠性:")
     print(
         reliability[
-            ["品类", "价格关系可靠", "半对数价格系数", "参考价处价格弹性", "稳健概率值"]
+            ["品类", "入选价格响应模型", "价格关系可靠", "参考价处价格弹性", "稳健概率值"]
         ].to_string(index=False)
     )
 
