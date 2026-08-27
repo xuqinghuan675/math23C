@@ -2,10 +2,6 @@ name: q2-recompute
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '问题二/脚本/**'
-      - '.github/workflows/q2_recompute.yml'
 
 permissions:
   contents: write
