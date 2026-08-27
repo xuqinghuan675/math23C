@@ -15,6 +15,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 INTERNAL = HERE / "内部"
+REPO_ROOT = HERE.parents[1]
 
 
 def _load(name: str, path: Path):
@@ -28,6 +29,14 @@ def _load(name: str, path: Path):
 
 dynamic_cost = _load("q2_dynamic_cost", INTERNAL / "动态成本.py")
 core = _load("q2_robust_core", INTERNAL / "分层稳健核心.py")
+
+# 内部模块比原脚本多了一层目录，统一把数据/结果根目录重新指向仓库根目录。
+core.base.ROOT = REPO_ROOT
+core.base.DATA = REPO_ROOT / "2023年C题"
+core.base.OUT = REPO_ROOT / "问题二" / "结果"
+core.base.FIG = REPO_ROOT / "问题二" / "图表"
+core.OUT = core.base.OUT
+core.base.OUT.mkdir(parents=True, exist_ok=True)
 
 # 仅替换成本预测层；数据口径、需求模型、价格可靠性和报童模型保持正式方案原定义。
 core.base.cost_forecast = dynamic_cost.cost_forecast
