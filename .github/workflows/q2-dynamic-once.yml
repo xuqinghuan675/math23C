@@ -41,7 +41,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No formal output changes."
           else
-            git commit -m "重算问题二逐日动态定价方案 [skip q2-dynamic]"
+            git commit -m "重算问题二局部动态定价方案 [skip q2-dynamic]"
             git push
           fi
-# one-shot rerun: daily demand curve pricing
+# one-shot rerun: central 35%-65% local operating band
