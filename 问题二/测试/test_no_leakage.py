@@ -34,3 +34,11 @@ def test_pseudo_future_and_weight_boundary_are_explicit():
     assert set(pd.to_datetime(pseudo["测试开始日"]).dt.year.unique()) == {2021, 2022}
     index = pd.read_csv(OUT / "02_指数覆盖率.csv", encoding="utf-8-sig")
     assert "固定篮子覆盖率" in index.columns
+
+
+def test_price_response_source_uses_lagged_structure_controls():
+    source = (ROOT / "问题二" / "脚本" / "v2" / "price_response.py").read_text(encoding="utf-8")
+    assert "STRUCTURE_CONTROL_COLUMNS" in source
+    assert '"前一日销量集中度HHI"' in source
+    assert '"前一日前三单品销量占比"' in source
+    assert '"前一日当前权重与基准权重距离"' in source

@@ -88,7 +88,7 @@ def main() -> None:
     bundle = load_bundle(force_rebuild=args.force_rebuild)
     index_cache = CACHE_DIR / "索引面板.pkl"
     index_cache_manifest = CACHE_DIR / "索引面板版本.txt"
-    if not args.force_rebuild and index_cache.exists() and index_cache_manifest.exists() and index_cache_manifest.read_text(encoding="utf-8") == "index-2.0.0-20260827":
+    if not args.force_rebuild and index_cache.exists() and index_cache_manifest.exists() and index_cache_manifest.read_text(encoding="utf-8") == "index-2.1.0-20260827":
         panel, _index_df, _coverage_df, _structure_df = pd.read_pickle(index_cache, compression="gzip")
         panel.to_csv(OUTPUT_DIR / "02_品类日面板.csv", index=False, encoding="utf-8-sig")
         _index_df.to_csv(OUTPUT_DIR / "02_固定篮子价格成本指数.csv", index=False, encoding="utf-8-sig")
@@ -100,7 +100,7 @@ def main() -> None:
         )
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         pd.to_pickle((panel, _index_df, _coverage_df, _structure_df), index_cache, compression="gzip")
-        index_cache_manifest.write_text("index-2.0.0-20260827", encoding="utf-8")
+        index_cache_manifest.write_text("index-2.1.0-20260827", encoding="utf-8")
     demand_detail, demand_summary, demand_selection, normal_fits, _full_fits, selected_normal, _selected_full = run_demand_backtests(
         bundle.normal_panel, panel, bundle.last_date
     )

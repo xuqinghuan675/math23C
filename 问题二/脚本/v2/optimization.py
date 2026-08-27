@@ -25,6 +25,22 @@ def _round_tenth(value: float) -> float:
     return float(max(0.0, round(float(value) * 10.0) / 10.0))
 
 
+def scenario_profit_quantiles(day_profit: np.ndarray) -> dict[str, float]:
+    """先按情景累计各日利润，再计算累计利润的分位数。"""
+    values = np.asarray(day_profit, dtype=float)
+    if values.ndim == 1:
+        total_profit = values
+    elif values.ndim == 2:
+        total_profit = values.sum(axis=0)
+    else:
+        raise ValueError("利润情景必须是情景向量或日期×情景矩阵")
+    return {
+        "P10": float(np.quantile(total_profit, 0.10)),
+        "P50": float(np.quantile(total_profit, 0.50)),
+        "P90": float(np.quantile(total_profit, 0.90)),
+    }
+
+
 def _price_grid(cost: float, band: tuple[float, float]) -> np.ndarray:
     low, high = band
     low_cent = int(math.ceil(float(cost) * (1.0 + low) * 100.0 - 1e-9))
@@ -270,8 +286,11 @@ def _cell(
     near_best = near_best.sort_values(["利润P10", "最近历史距离", "售价"], ascending=[False, True, True])
     robust_summary = near_best.iloc[0].to_dict()
     ref_markup = reference_markup(price_fit, date)
-    reference_price = float(np.round(future_cost * (1.0 + ref_markup), 2))
+    raw_reference_price = float(future_cost * (1.0 + ref_markup))
+    reference_price = float(np.round(raw_reference_price, 2))
     reference_price = float(np.clip(reference_price, candidates[0]["售价"], candidates[-1]["售价"]))
+    executed_reference_markup = float(reference_price / max(future_cost, 1e-9) - 1.0)
+    reference_constrained = bool(ref_markup < band[0] or ref_markup > band[1])
     reference_order, reference_arrays, reference_demand = _best_order(reference_price, base, np.zeros_like(beta) if not reliable else beta, price_fit, date, costs, losses, discount_demand, discount_ratio, 0.0, None, False)
     reference_summary = _summarise(reference_price, reference_order, reference_arrays, reference_demand, costs, band[0], band[1], check_price_support(reference_price, future_cost, date, band, support)[0])
     # 对数学价、稳健价和参考价分别进行 0.1 千克细化，并保留邻点差值。
@@ -310,12 +329,17 @@ def _cell(
     math_markup = float(math_final["加成率"])
     boundary = abs(math_markup - band[1]) <= 0.015 or abs(math_markup - band[0]) <= 0.015
     direction = "上界" if abs(math_markup - band[1]) <= 0.015 else "下界" if abs(math_markup - band[0]) <= 0.015 else "无"
+    boundary_label = "是" if reliable and boundary else "否" if reliable else "不适用"
+    direction_label = direction if reliable else "不适用"
     return {
         "日期": date.date().isoformat(),
         "品类": category,
         "未来成本点值": float(future_cost),
         "损耗率": float(loss_rate),
         "参考加成率": float(ref_markup),
+        "未截断参考加成率": float(ref_markup),
+        "执行参考加成率": executed_reference_markup,
+        "参考是否受经营带约束": "是" if reference_constrained else "否",
         "参考正常售价": float(reference_final["售价"]),
         "数学最优": math_final,
         "稳健推荐": robust_final,
@@ -326,8 +350,8 @@ def _cell(
         "可靠": bool(reliable),
         "候选": candidates if collect_curve else [],
         "策略": strategies,
-        "是否边界": "是" if boundary else "否",
-        "边界方向": direction,
+        "是否边界": boundary_label,
+        "边界方向": direction_label,
         "数学补货邻点差": math_neighbour,
         "稳健补货邻点差": robust_neighbour,
         "参考补货邻点差": reference_neighbour,
@@ -383,6 +407,7 @@ def run_optimization(
     cell_rows: list[dict[str, Any]] = []
     curve_rows: list[dict[str, Any]] = []
     strategy_rows: list[dict[str, Any]] = []
+    strategy_profit_paths: dict[tuple[str, str], list[np.ndarray]] = {}
     final_rows: list[dict[str, Any]] = []
     for cat in CATEGORIES:
         cost_sub = future_cost_points[future_cost_points["品类"] == cat].sort_values("日期")
@@ -393,6 +418,7 @@ def run_optimization(
             for candidate in result["候选"]:
                 curve_rows.append(candidate)
             for strategy_name, strategy in result["策略"].items():
+                strategy_profit_paths.setdefault((cat, strategy_name), []).append(np.asarray(strategy["利润数组"]["利润"], dtype=float))
                 strategy_rows.append({"日期": result["日期"], "品类": cat, "策略": strategy_name, "售价": strategy["售价"], "补货量": strategy["补货量"], "预计毛利": float(strategy["汇总"]["平均利润"]), "毛利P10": float(strategy["汇总"]["利润P10"]), "毛利P50": float(strategy["汇总"]["利润P50"]), "毛利P90": float(strategy["汇总"]["利润P90"])})
             final_summary = result["最终"]
             cost_values = bundle["成本情景"][:, day_index, CATEGORIES.index(cat)]
@@ -411,10 +437,13 @@ def run_optimization(
                     "预测批发价P90": float(np.quantile(cost_values, 0.90)),
                     "附件四品类损耗率": category_loss[cat],
                     "条件参考加成率": result["参考加成率"],
+                    "未截断参考加成率": result["未截断参考加成率"],
+                    "执行参考加成率": result["执行参考加成率"],
+                    "参考是否受经营带约束": result["参考是否受经营带约束"],
                     "价格经营带下限": MAIN_MARKUP_BAND[0],
                     "价格经营带上限": MAIN_MARKUP_BAND[1],
                     "参考正常售价": result["参考正常售价"],
-                    "数学期望利润最大售价": result["数学最优"]["售价"],
+                    "数学期望利润最大售价": result["数学最优"]["售价"] if reliability[cat] else "不适用",
                     "稳健推荐售价": result["稳健推荐"]["售价"] if reliability[cat] else result["参考正常售价"],
                     "建议成本加成率": final_summary["加成率"],
                     "正常需求P10": float(np.quantile(demand_values, 0.10)),
@@ -443,7 +472,21 @@ def run_optimization(
     curve_df = pd.DataFrame(curve_rows).sort_values(["品类", "日期", "售价"]).reset_index(drop=True)
     strategy_df = pd.DataFrame(strategy_rows).sort_values(["日期", "品类", "策略"]).reset_index(drop=True)
     path_df, quantile_df = _future_cost_exports(bundle, future_cost_points)
-    strategy_summary = strategy_df.groupby(["品类", "策略"], as_index=False).agg(七天预计毛利=("预计毛利", "sum"), 毛利P10=("毛利P10", "sum"), 毛利P50=("毛利P50", "sum"), 毛利P90=("毛利P90", "sum"), 七天补货量=("补货量", "sum"))
+    strategy_summary_rows: list[dict[str, Any]] = []
+    for (cat, strategy_name), sub in strategy_df.groupby(["品类", "策略"], sort=False):
+        quantiles = scenario_profit_quantiles(np.vstack(strategy_profit_paths[(cat, strategy_name)]))
+        strategy_summary_rows.append(
+            {
+                "品类": cat,
+                "策略": strategy_name,
+                "七天预计毛利": float(sub["预计毛利"].sum()),
+                "毛利P10": quantiles["P10"],
+                "毛利P50": quantiles["P50"],
+                "毛利P90": quantiles["P90"],
+                "七天补货量": float(sub["补货量"].sum()),
+            }
+        )
+    strategy_summary = pd.DataFrame(strategy_summary_rows)
     decomp_rows: list[dict[str, Any]] = []
     for cat in CATEGORIES:
         sub = strategy_summary[strategy_summary["品类"] == cat].set_index("策略")
@@ -460,16 +503,21 @@ def run_optimization(
             ]
         )
     decomp_df = pd.DataFrame(decomp_rows)
-    total_a = float(strategy_summary.loc[strategy_summary["策略"] == "A传统基准", "七天预计毛利"].sum())
-    total_b = float(strategy_summary.loc[strategy_summary["策略"] == "B仅优化补货", "七天预计毛利"].sum())
-    total_c = float(strategy_summary.loc[strategy_summary["策略"] == "C期望利润最大", "七天预计毛利"].sum())
-    total_d = float(strategy_summary.loc[strategy_summary["策略"] == "D稳健经营", "七天预计毛利"].sum())
+    total_profit_paths: dict[str, np.ndarray] = {}
+    for strategy_name in ["A传统基准", "B仅优化补货", "C期望利润最大", "D稳健经营"]:
+        total_profit_paths[strategy_name] = np.vstack(
+            [np.vstack(strategy_profit_paths[(cat, strategy_name)]).sum(axis=0) for cat in CATEGORIES]
+        ).sum(axis=0)
+    total_a = float(total_profit_paths["A传统基准"].mean())
+    total_b = float(total_profit_paths["B仅优化补货"].mean())
+    total_c = float(total_profit_paths["C期望利润最大"].mean())
+    total_d = float(total_profit_paths["D稳健经营"].mean())
     strategy_total = pd.DataFrame(
         [
-            {"策略": "A传统基准", "七天预计毛利": total_a, "相对A改善": 0.0},
-            {"策略": "B仅优化补货", "七天预计毛利": total_b, "相对A改善": total_b - total_a},
-            {"策略": "C期望利润最大", "七天预计毛利": total_c, "相对A改善": total_c - total_a},
-            {"策略": "D稳健经营", "七天预计毛利": total_d, "相对A改善": total_d - total_a},
+            {"策略": "A传统基准", "七天预计毛利": total_a, "毛利P10": float(np.quantile(total_profit_paths["A传统基准"], 0.10)), "毛利P50": float(np.quantile(total_profit_paths["A传统基准"], 0.50)), "毛利P90": float(np.quantile(total_profit_paths["A传统基准"], 0.90)), "相对A改善": 0.0},
+            {"策略": "B仅优化补货", "七天预计毛利": total_b, "毛利P10": float(np.quantile(total_profit_paths["B仅优化补货"], 0.10)), "毛利P50": float(np.quantile(total_profit_paths["B仅优化补货"], 0.50)), "毛利P90": float(np.quantile(total_profit_paths["B仅优化补货"], 0.90)), "相对A改善": total_b - total_a},
+            {"策略": "C期望利润最大", "七天预计毛利": total_c, "毛利P10": float(np.quantile(total_profit_paths["C期望利润最大"], 0.10)), "毛利P50": float(np.quantile(total_profit_paths["C期望利润最大"], 0.50)), "毛利P90": float(np.quantile(total_profit_paths["C期望利润最大"], 0.90)), "相对A改善": total_c - total_a},
+            {"策略": "D稳健经营", "七天预计毛利": total_d, "毛利P10": float(np.quantile(total_profit_paths["D稳健经营"], 0.10)), "毛利P50": float(np.quantile(total_profit_paths["D稳健经营"], 0.50)), "毛利P90": float(np.quantile(total_profit_paths["D稳健经营"], 0.90)), "相对A改善": total_d - total_a},
         ]
     )
     final_df.to_csv(OUTPUT_DIR / "09_七天六品类最终策略.csv", index=False, encoding="utf-8-sig")
@@ -527,6 +575,20 @@ def run_sensitivities(
     # 经营带敏感性使用同一组情景，避免把情景变化误认为经营带变化。
     for band_name, band in MARKUP_BANDS.items():
         for cat in CATEGORIES:
+            if not reliable[cat]:
+                band_rows.append(
+                    {
+                        "经营带": band_name,
+                        "品类": cat,
+                        "下限": band[0],
+                        "上限": band[1],
+                        "七天数学搜索毛利": np.nan,
+                        "边界解天数": np.nan,
+                        "是否纳入价格优化": "否",
+                        "说明": "价格关系不可靠，不进行有意义的价格优化",
+                    }
+                )
+                continue
             profits = []
             touch = 0
             cost_sub = future_cost_points[future_cost_points["品类"] == cat].sort_values("日期")
@@ -534,7 +596,7 @@ def run_sensitivities(
                 result = _cell(cat, i, date, float(cost_sub.iloc[i]["预测批发价"]), category_loss[cat], normal_fits[cat], price_fits[cat], reliable[cat], band, support_map[cat], small_bundle, calibration.get(cat, 1.0), collect_curve=False)
                 profits.append(float(result["数学最优"]["平均利润"]))
                 touch += int(result["是否边界"] == "是")
-            band_rows.append({"经营带": band_name, "品类": cat, "下限": band[0], "上限": band[1], "七天数学搜索毛利": float(np.sum(profits)), "边界解天数": touch})
+            band_rows.append({"经营带": band_name, "品类": cat, "下限": band[0], "上限": band[1], "七天数学搜索毛利": float(np.sum(profits)), "边界解天数": touch, "是否纳入价格优化": "是", "说明": "可靠价格关系下的经营带敏感性"})
     band_df = pd.DataFrame(band_rows)
 
     loss_rows: list[dict[str, Any]] = []
@@ -574,6 +636,9 @@ def run_sensitivities(
     for level in ["点估计", "95%区间下限", "95%区间上限", "自助法抽样"]:
         for cat in CATEGORIES:
             fit = price_fits[cat]
+            if not reliable[cat]:
+                beta_rows.append({"价格系数情景": level, "品类": cat, "采用系数中心": np.nan, "七天预计毛利": np.nan, "是否纳入优化": "否", "说明": "价格关系不可靠，不进行系数敏感性优化"})
+                continue
             if level == "点估计":
                 beta_values = np.full(sensitivity_count, fit.coefficient)
             elif level == "95%区间下限":

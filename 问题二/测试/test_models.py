@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "问题二" / "结果_v2"
 CATEGORIES = {"花叶类", "花菜类", "水生根茎类", "茄类", "辣椒类", "食用菌"}
 
+import sys
+
+sys.path.insert(0, str(ROOT / "问题二" / "脚本"))
+
+from v2.diagnostics import wape
+
 
 def test_required_demand_candidates_are_reported():
     selection = pd.read_csv(OUT / "03_需求模型选择.csv", encoding="utf-8-sig")
@@ -44,3 +50,9 @@ def test_cost_candidates_and_intervals():
     assert len(future) == 42
     assert (future["成本P10"] <= future["成本P50"]).all()
     assert (future["成本P50"] <= future["成本P90"]).all()
+
+
+def test_wape_does_not_allow_opposite_errors_to_cancel():
+    actual = np.asarray([100.0, 100.0])
+    predicted = np.asarray([150.0, 50.0])
+    assert abs(wape(actual, predicted) - 0.5) < 1e-12

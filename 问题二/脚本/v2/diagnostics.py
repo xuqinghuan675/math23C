@@ -14,7 +14,7 @@ from .demand_models import DemandFit, fit_demand_model, make_folds, predict_poin
 from .price_response import PriceFit, fit_price_model, response_multiplier
 
 
-def _wape(actual: np.ndarray, predicted: np.ndarray) -> float:
+def wape(actual: np.ndarray, predicted: np.ndarray) -> float:
     return float(np.abs(actual - predicted).sum() / max(np.abs(actual).sum(), 1e-9))
 
 
@@ -39,7 +39,7 @@ def run_end_to_end_backtest(
             test = test.dropna(subset=["正常销售量", "正常销售售价"])
             if len(train_normal) < 120 or len(train_enriched) < 120 or len(test) < 2:
                 continue
-            model = fit_demand_model(train_normal, cat, selected_demand_models[cat], "正常销售量")
+            model = fit_demand_model(train_normal, cat, selected_demand_models[cat], "正常销售量", use_prequential_residual=False)
             price_template = selected_price_fits[cat]
             try:
                 price_fit = fit_price_model(train_enriched, cat, price_template.model_name, price_template.source_name, "正常销售量", rng, bootstrap_reps=0)
@@ -76,8 +76,10 @@ def run_end_to_end_backtest(
                         "训练样本数": int(len(train_normal)),
                         "测试样本数": int(len(test)),
                         "实际总量": float(actual.sum()),
+                        "实际绝对量总和": float(np.abs(actual).sum()),
                         "预测总量": float(prediction.sum()),
-                        "端到端加权绝对百分比误差": _wape(actual, prediction),
+                        "绝对误差总量": float(np.abs(actual - prediction).sum()),
+                        "端到端加权绝对百分比误差": wape(actual, prediction),
                         "端到端平均绝对误差": float(np.mean(np.abs(actual - prediction))),
                         "价格响应系数": float(price_fit.coefficient) if price_fit is not None else 0.0,
                         "训练最大日期": pd.Timestamp(train_normal["销售日期"].max()).date().isoformat(),
@@ -87,9 +89,9 @@ def run_end_to_end_backtest(
     detail_df = pd.DataFrame(detail_rows)
     summary_rows: list[dict[str, Any]] = []
     for (cat, target), sub in detail_df.groupby(["品类", "需求口径"], sort=False):
-        actual_total = sub["实际总量"].sum()
-        pred_total = sub["预测总量"].sum()
-        end_wape = float(np.abs(actual_total - pred_total) / max(abs(actual_total), 1e-9))
+        actual_abs_total = sub["实际绝对量总和"].sum()
+        absolute_error_total = sub["绝对误差总量"].sum()
+        end_wape = float(absolute_error_total / max(actual_abs_total, 1e-9))
         fold_wape = sub["端到端加权绝对百分比误差"].to_numpy(float)
         baseline_rows = demand_summary[(demand_summary["品类"] == cat) & (demand_summary["口径"] == ("正常销售" if target == "正常销售量" else "全量净需求"))]
         baseline_wape = float(baseline_rows.loc[baseline_rows["需求模型"] == sub.iloc[0]["需求模型"], "池化加权绝对百分比误差"].iloc[0]) if not baseline_rows.loc[baseline_rows["需求模型"] == sub.iloc[0]["需求模型"]].empty else np.nan

@@ -290,8 +290,14 @@ def make_figures(
     fig, ax = plt.subplots(figsize=(11, 6))
     for j, cat in enumerate(CATEGORIES):
         sub = final[final["品类"] == cat].sort_values("日期")
+        math_price = pd.to_numeric(sub["数学期望利润最大售价"], errors="coerce")
+        valid = math_price.notna()
+        if not valid.any():
+            continue
+        sub = sub.loc[valid]
+        math_price = math_price.loc[valid]
         x = np.arange(len(sub)) + j * 0.02
-        ax.plot(x, sub["数学期望利润最大售价"], marker="o", linestyle="none", color=colors[j], label=cat + "数学价")
+        ax.plot(x, math_price.to_numpy(float), marker="o", linestyle="none", color=colors[j], label=cat + "数学价")
         ax.plot(x, sub["稳健推荐售价"], marker="x", linestyle="none", color=colors[j], alpha=0.65)
     ax.set_xticks(np.arange(7), [x.strftime("%m-%d") for x in FUTURE_DATES])
     ax.set_ylabel("售价（元/千克）")
@@ -372,6 +378,26 @@ def _git_head() -> str:
         return "无法读取"
 
 
+def code_tree_hash() -> str:
+    """对问题二脚本和测试源码做稳定哈希，不受生成结果和本地缓存影响。"""
+    digest = hashlib.sha256()
+    source_root = QUESTION_DIR / "脚本"
+    test_root = QUESTION_DIR / "测试"
+    paths = [
+        path
+        for root in [source_root, test_root]
+        for path in root.rglob("*.py")
+        if "__pycache__" not in path.parts
+    ]
+    for path in sorted(paths):
+        relative = path.relative_to(PROJECT_ROOT).as_posix().encode("utf-8")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def write_manifest(
     start_time: datetime,
     end_time: datetime,
@@ -390,6 +416,7 @@ def write_manifest(
     manifest = {
         "程序版本": __version__,
         "Git提交": _git_head(),
+        "代码树哈希": code_tree_hash(),
         "原始附件哈希": hashes,
         "配置哈希": config_hash,
         "随机种子": config_snapshot()["随机种子"],
@@ -496,7 +523,7 @@ def write_documents(
     total_profit = float(final["预计毛利"].sum())
     reliable_count = int(final.drop_duplicates("品类")["价格关系是否可靠"].eq("是").sum())
     lines = [
-        "# 2023年数学建模国赛C题问题二 v2 建模说明",
+        "# 2023年数学建模国赛C题问题二 v2.1 建模说明",
         "",
         "## 1. 题目要求",
         "",
@@ -520,7 +547,7 @@ def write_documents(
         "",
         "## 6. 时间效应剥离与价格响应",
         "",
-        "主响应函数以正常销售量的对数为目标，控制星期、月份、趋势、成本、折扣占比、HHI、前三单品占比和权重距离；价格变量优先使用相对条件参考加成的偏离。参考加成只由截止日前的同星期—月份历史构造。统一回归和两阶段剥离时间效应的系数同时核对。另用单品—日期正常销售面板控制单品固定效应、星期、月份、趋势、批发成本和折扣状态，作为稳健性检验；缺失单品—日期不填为零。所有价格系数只解释为控制日期、成本和商品结构后的历史条件关联，不宣称严格因果。",
+        "主响应函数以正常销售量的对数为目标，控制星期、月份、趋势、成本、折扣占比以及严格滞后的商品结构指标；价格变量优先使用相对条件参考加成的偏离。参考加成只由截止日前的同星期—月份历史构造。统一回归和两阶段剥离时间效应的系数同时核对。另用单品—日期正常销售面板控制单品固定效应、星期、月份、趋势、批发成本和折扣状态，作为稳健性检验；缺失单品—日期不填为零。所有价格系数只解释为控制日期、成本和商品结构后的历史条件关联，不宣称严格因果。",
         "",
         "## 7. 价格关系可靠性",
         "",
@@ -528,7 +555,7 @@ def write_documents(
         "",
         "## 8. 未来七日需求",
         "",
-        "需求候选包含同星期最近4次均值、同星期最近8次中位数、近7日均值、近14日均值、星期加月份对数回归和带趋势对数回归。用八个主要非重叠折和十四个近期滚动折比较池化误差、折间误差、平均绝对误差、均方根误差、尺度误差、分位数损失与区间覆盖；复杂模型改善不足3%或落在一标准误范围内时选择更简单模型。",
+        "需求候选包含同星期最近4次均值、同星期最近8次中位数、近7日均值、近14日均值、星期加月份对数回归和带趋势对数回归。用八个主要非重叠折和十四个近期滚动折比较池化误差、折间误差、平均绝对误差、均方根误差、尺度误差、分位数损失与区间覆盖；复杂模型改善不足3%或落在一标准误范围内时选择更简单模型。需求区间和联合情景使用最终入选模型的严格滚动预测残差，而不是同一训练集内的拟合残差。",
         "",
         "## 9. 未来七日成本",
         "",
@@ -536,7 +563,7 @@ def write_documents(
         "",
         "## 10. 联合不确定性",
         f"",
-        f"正式模式使用{optimization['bundle']['情景数']}个情景；需求扰动和成本扰动采用长度7的移动区块，尽量保留品类共同冲击和日期短期相关；价格系数对可靠品类从区块自助法分布抽样，不可靠品类固定为零；损耗率使用附件四点值的0.8、1.0和1.2倍并截断到合法范围；折扣回收情景使用零回收、历史中位比例和完全回收上界。",
+        f"正式模式使用{optimization['bundle']['情景数']}个情景；需求扰动和成本扰动采用长度7的移动区块，尽量保留品类共同冲击和日期短期相关；价格系数只对可靠品类进入优化，不可靠品类不进行价格优化；损耗率使用附件四点值的0.8、1.0和1.2倍并截断到合法范围；折扣回收情景使用零回收、历史中位比例和完全回收上界。",
         "",
         "## 11. 随机收益模型",
         "",
@@ -544,15 +571,15 @@ def write_documents(
         "",
         "## 12. 售价与补货量求解",
         "",
-        "售价在给定经营带内按0.01元/千克枚举，补货量按报童分位数得到初值，再在至少上下2千克的0.1千克网格邻域复核。每个品类—日期只有一个售价和一个补货量，不使用没有必要的遗传算法或粒子群。",
+        "历史参考加成是根据历史条件状态估计的中心值，政策经营带是允许执行的区间；两者不混同。实际参考价格先由未截断历史参考加成得到，再按政策经营带截断，并同时记录未截断参考加成、执行参考加成和是否受到经营带约束。售价在给定经营带内按0.01元/千克枚举，补货量按报童分位数得到初值，再在至少上下2千克的0.1千克网格邻域复核。每个品类—日期只有一个售价和一个补货量，不使用没有必要的遗传算法或粒子群。",
         "",
         "## 13. 数学最优价与稳健推荐价",
         "",
-        "数学期望利润最大售价是给定情景和经营带内的离散搜索结果；稳健推荐售价先在期望收益不低于最大值99%的候选中比较利润下界，并偏向历史支持更近、价格更保守的候选。不可靠品类不把搜索数值称为精细定价结论。",
+        "数学期望利润最大售价是可靠价格关系品类在给定情景和经营带内的离散搜索结果；稳健推荐售价先在期望收益不低于最大值99%的候选中比较利润下界，并偏向历史支持更近、价格更保守的候选。不可靠品类的数学价格、边界方向和价格系数敏感性标记为不适用，正式价格只采用执行参考加成。",
         "",
         "## 14. 边界解",
         "",
-        "如果数学搜索价触及经营带上下界，则标记边界方向并配套输出价格—利润曲线和五组经营带敏感性。边界解只表示当前历史支持区间和模型假设下的边界结果，不称为无约束全局最优。",
+        "如果可靠品类的数学搜索价触及经营带上下界，则标记边界方向并配套输出价格—利润曲线和五组经营带敏感性；不可靠品类不计入边界解统计。边界解只表示当前历史支持区间和模型假设下的边界结果，不称为无约束全局最优。",
         "",
         "## 15. 策略收益分解",
         "",
@@ -560,14 +587,18 @@ def write_documents(
         "",
         "## 16. 最终策略摘要",
         "",
-        f"本次新方案生成42条策略，六品类中通过基础价格关系门槛的品类数为{reliable_count}，七天预计毛利合计为{total_profit:.2f}元。逐日结果见09_七天六品类最终策略.csv。",
+        f"本次新方案生成42条策略，六品类中通过基础价格关系门槛的品类数为{reliable_count}，七天预计毛利合计为{total_profit:.2f}元。七天利润区间先对联合情景逐情景累计，再计算百分之十、百分之五十和百分之九十分位；逐日结果见09_七天六品类最终策略.csv。",
         "",
         "| 品类 | 七天售价范围 | 七天补货量 | 七天预计毛利 | 毛利P10/P50/P90 | 主要风险 |",
         "|---|---:|---:|---:|---:|---|",
     ]
+    strategy_summary = optimization["strategy_summary"]
     for cat in CATEGORIES:
         sub = final[final["品类"] == cat]
-        lines.append(f"| {cat} | {sub['稳健推荐售价'].min():.2f}—{sub['稳健推荐售价'].max():.2f} | {sub['建议补货量'].sum():.1f}千克 | {sub['预计毛利'].sum():.2f}元 | {sub['毛利P10'].sum():.2f}/{sub['毛利P50'].sum():.2f}/{sub['毛利P90'].sum():.2f} | 无库存、缺货记录；价格关系为条件关联 |")
+        d_summary = strategy_summary[(strategy_summary["品类"] == cat) & (strategy_summary["策略"] == "D稳健经营")].iloc[0]
+        lines.append(f"| {cat} | {sub['稳健推荐售价'].min():.2f}—{sub['稳健推荐售价'].max():.2f} | {sub['建议补货量'].sum():.1f}千克 | {sub['预计毛利'].sum():.2f}元 | {d_summary['毛利P10']:.2f}/{d_summary['毛利P50']:.2f}/{d_summary['毛利P90']:.2f} | 无库存、缺货记录；价格关系为条件关联 |")
+    d_total = strategy_total[strategy_total["策略"] == "D稳健经营"].iloc[0]
+    lines.append(f"六品类合计的D策略七天累计毛利区间为 {d_total['毛利P10']:.2f}/{d_total['毛利P50']:.2f}/{d_total['毛利P90']:.2f} 元。")
     lines += [
         "",
         "## 17. 结果文件",

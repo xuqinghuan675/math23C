@@ -6,9 +6,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "问题二" / "结果_v2"
+
+import sys
+
+sys.path.insert(0, str(ROOT / "问题二" / "脚本"))
+
+from v2.optimization import scenario_profit_quantiles
 
 
 def test_discrete_grids_and_profit_intervals():
@@ -31,3 +36,17 @@ def test_neighbour_check_and_strategy_algebra():
         assert abs(improvements["B仅优化补货"] - (values["B仅优化补货"] - values["A传统基准"])) < 1e-7
         assert abs(improvements["C期望利润最大"] - (values["C期望利润最大"] - values["A传统基准"])) < 1e-7
         assert abs(improvements["D稳健经营"] - (values["D稳健经营"] - values["A传统基准"])) < 1e-7
+
+
+def test_joint_profit_quantiles_are_not_sums_of_daily_quantiles():
+    day_profit = np.asarray(
+        [
+            [0.0, 10.0, 20.0, 30.0],
+            [30.0, 20.0, 10.0, 0.0],
+        ]
+    )
+    result = scenario_profit_quantiles(day_profit)
+    assert result["P10"] == 30.0
+    assert result["P50"] == 30.0
+    assert result["P90"] == 30.0
+    assert result["P10"] != float(np.quantile(day_profit[0], 0.10) + np.quantile(day_profit[1], 0.10))

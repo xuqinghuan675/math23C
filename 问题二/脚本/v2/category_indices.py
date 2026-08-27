@@ -201,6 +201,12 @@ def build_indices(
     structure_df = pd.DataFrame(structure_rows)
     panel = full_panel.merge(index_df, on=["销售日期", "品类"], how="left", validate="one_to_one")
     panel = panel.merge(structure_df, on=["销售日期", "品类"], how="left", validate="one_to_one")
+    panel = panel.sort_values(["品类", "销售日期"]).reset_index(drop=True)
+    previous_date = panel.groupby("品类", observed=True)["销售日期"].shift(1)
+    previous_is_yesterday = (panel["销售日期"] - previous_date).dt.days.eq(1)
+    for source in ["销量集中度HHI", "前三单品销量占比", "当前权重与基准权重距离"]:
+        previous = panel.groupby("品类", observed=True)[source].shift(1)
+        panel[f"前一日{source}"] = previous.where(previous_is_yesterday)
     panel["销量加权加成率"] = panel["销量加权售价"] / panel["销量加权进价"] - 1.0
     panel["当前权重与基准权重距离"] = panel["当前权重与基准权重距离"].astype(float)
 
@@ -219,7 +225,8 @@ def build_indices(
     structure_export = panel[
         [
             "销售日期", "品类", "当日单品数", "单品数", "销量集中度HHI", "前三单品销量占比",
-            "固定篮子覆盖率", "当前权重与基准权重距离",
+            "固定篮子覆盖率", "当前权重与基准权重距离", "前一日销量集中度HHI",
+            "前一日前三单品销量占比", "前一日当前权重与基准权重距离",
         ]
     ].copy()
     if write_outputs:

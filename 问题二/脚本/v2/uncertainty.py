@@ -39,7 +39,9 @@ def _demand_residual_matrix(fits: dict[str, DemandFit]) -> np.ndarray:
     matrix = np.full((len(index), len(CATEGORIES)), np.nan, dtype=float)
     for j, cat in enumerate(CATEGORIES):
         fit = fits[cat]
-        residual = pd.Series(fit.residual_log - np.median(fit.residual_log), index=pd.to_datetime(fit.history["销售日期"]).dt.normalize())
+        residual_values = np.asarray(fit.residual_log, dtype=float)
+        center = float(np.nanmedian(residual_values)) if np.isfinite(residual_values).any() else 0.0
+        residual = pd.Series(residual_values - center, index=pd.to_datetime(fit.history["销售日期"]).dt.normalize())
         aligned = residual.reindex(index)
         matrix[:, j] = aligned.interpolate(limit_direction="both").fillna(0.0).to_numpy(float)
     return np.clip(matrix, -2.5, 2.5)

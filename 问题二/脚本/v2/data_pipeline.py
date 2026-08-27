@@ -24,7 +24,7 @@ from .config import (
 )
 
 
-DATA_PIPELINE_VERSION = "data-2.0.0-20260827"
+DATA_PIPELINE_VERSION = "data-2.1.0-20260827"
 
 
 @dataclass

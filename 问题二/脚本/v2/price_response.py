@@ -14,6 +14,13 @@ from .config import CATEGORIES, OUTPUT_DIR, PRICE_RESPONSE_MODELS, BOOTSTRAP_REP
 from .demand_models import make_folds
 
 
+STRUCTURE_CONTROL_COLUMNS = [
+    "前一日销量集中度HHI",
+    "前一日前三单品销量占比",
+    "前一日当前权重与基准权重距离",
+]
+
+
 @dataclass
 class PriceFit:
     category: str
@@ -97,7 +104,7 @@ def _prepare_features(
     data["对数价格比"] = np.log(np.maximum(data["价格"] / data["参考价格"], 1e-8))
     if controls_medians is None:
         controls_medians = {}
-        for col in ["折扣销量占比", "销量集中度HHI", "前三单品销量占比", "当前权重与基准权重距离"]:
+        for col in ["折扣销量占比", *STRUCTURE_CONTROL_COLUMNS]:
             value = pd.to_numeric(data.get(col, pd.Series(dtype=float)), errors="coerce").median()
             controls_medians[col] = float(value) if np.isfinite(value) else 0.0
     for col, value in controls_medians.items():
@@ -122,9 +129,9 @@ def _prepare_features(
         names.append(name)
     design["时间趋势"] = data["时间趋势"].to_numpy(float)
     design["对数成本"] = data["对数成本"].to_numpy(float)
-    for col in ["折扣销量占比", "销量集中度HHI", "前三单品销量占比", "当前权重与基准权重距离"]:
+    for col in ["折扣销量占比", *STRUCTURE_CONTROL_COLUMNS]:
         design[col] = data[col].to_numpy(float)
-    names += ["时间趋势", "对数成本", "折扣销量占比", "销量集中度HHI", "前三单品销量占比", "当前权重与基准权重距离"]
+    names += ["时间趋势", "对数成本", "折扣销量占比", *STRUCTURE_CONTROL_COLUMNS]
     if model_name == "半对数加成":
         data["价格变量"] = data["加成偏离"]
     elif model_name == "对数加成":

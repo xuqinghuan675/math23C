@@ -111,7 +111,58 @@ def _simple_center(history: pd.DataFrame, model_name: str, date: pd.Timestamp, t
     return float(max(0.01, value))
 
 
-def fit_demand_model(frame: pd.DataFrame, category: str, model_name: str, target_col: str) -> DemandFit:
+def _regression_point(history: pd.DataFrame, model_name: str, date: pd.Timestamp, target_col: str) -> float:
+    origin = pd.Timestamp(history["销售日期"].min())
+    include_trend = model_name == "星期加月份及趋势对数回归"
+    x_train, _ = _design_frame(history["销售日期"], origin, include_trend)
+    y_train = np.log(np.maximum(history[target_col].to_numpy(float), 1e-6))
+    coefficients = _ols(x_train, y_train)
+    fitted = np.exp(x_train @ coefficients)
+    smear_factor = float(np.mean(np.exp(y_train - np.log(np.maximum(fitted, 1e-6)))))
+    x_next, _ = _design_frame(pd.DatetimeIndex([pd.Timestamp(date)]), origin, include_trend)
+    return float(max(0.01, np.exp(x_next @ coefficients)[0] * smear_factor))
+
+
+def _prequential_residuals(history: pd.DataFrame, model_name: str, target_col: str) -> np.ndarray:
+    """用每个日期之前可获得的数据形成样本外对数预测误差。"""
+    dates = pd.to_datetime(history["销售日期"]).dt.normalize().reset_index(drop=True)
+    values = history[target_col].to_numpy(float)
+    residuals = np.full(len(history), np.nan, dtype=float)
+    is_regression = model_name in {"星期加月份对数回归", "星期加月份及趋势对数回归"}
+    if not is_regression:
+        value_series = pd.Series(values)
+        weekday_series = pd.Series(dates.dt.weekday.to_numpy(), index=value_series.index)
+        if model_name == "同星期最近4次均值":
+            predictions = value_series.groupby(weekday_series, sort=False).transform(
+                lambda series: series.shift(1).rolling(4, min_periods=4).mean()
+            )
+        elif model_name == "同星期最近8次中位数":
+            predictions = value_series.groupby(weekday_series, sort=False).transform(
+                lambda series: series.shift(1).rolling(8, min_periods=8).median()
+            )
+        else:
+            required = 7 if model_name == "近7日均值" else 14
+            predictions = value_series.shift(1).rolling(required, min_periods=required).mean()
+        valid = predictions.notna().to_numpy() & np.isfinite(values) & (values > 0) & (predictions.to_numpy() > 0)
+        residuals[valid] = np.log(values[valid]) - np.log(predictions.to_numpy()[valid])
+        return residuals
+    for index, date in enumerate(dates):
+        past = history.iloc[:index]
+        if len(past) < 120:
+            continue
+        prediction = _regression_point(past, model_name, date, target_col)
+        if np.isfinite(prediction) and prediction > 0 and np.isfinite(values[index]) and values[index] > 0:
+            residuals[index] = float(np.log(values[index]) - np.log(prediction))
+    return residuals
+
+
+def fit_demand_model(
+    frame: pd.DataFrame,
+    category: str,
+    model_name: str,
+    target_col: str,
+    use_prequential_residual: bool = True,
+) -> DemandFit:
     history = _as_history(frame, category, target_col)
     if history.empty:
         raise ValueError(f"{category} 的需求训练样本为空")
@@ -125,8 +176,12 @@ def fit_demand_model(frame: pd.DataFrame, category: str, model_name: str, target
         y = np.log(np.maximum(history[target_col].to_numpy(float), 1e-6))
         coefficients = _ols(x, y)
         fitted = np.exp(x @ coefficients)
-        residual_log = y - np.log(np.maximum(fitted, 1e-6))
-        smear_factor = float(np.mean(np.exp(residual_log)))
+        in_sample_residual = y - np.log(np.maximum(fitted, 1e-6))
+        residual_log = _prequential_residuals(history, model_name, target_col) if use_prequential_residual else in_sample_residual
+        if np.isfinite(residual_log).sum() < 3:
+            residual_log = in_sample_residual
+        valid_residual = residual_log[np.isfinite(residual_log)]
+        smear_factor = float(np.mean(np.exp(valid_residual))) if len(valid_residual) else 1.0
     else:
         if model_name == "同星期最近4次均值":
             grouped = history.assign(_星期=history["销售日期"].dt.weekday).groupby("_星期")[target_col].mean()
@@ -138,11 +193,17 @@ def fit_demand_model(frame: pd.DataFrame, category: str, model_name: str, target
             center = history[target_col].tail(7 if model_name == "近7日均值" else 14).mean()
             centers = np.full(len(history), float(center))
         centers = np.maximum(np.asarray(centers, dtype=float), 0.01)
-        residual_log = np.log(np.maximum(history[target_col].to_numpy(float), 1e-6)) - np.log(centers)
-        smear_factor = float(np.mean(np.exp(residual_log)))
-    if len(residual_log) < 3:
-        residual_log = np.array([0.0, 0.0, 0.0], dtype=float)
-    quantiles = tuple(float(x) for x in np.quantile(residual_log, [0.05, 0.10, 0.50, 0.90, 0.95]))
+        in_sample_residual = np.log(np.maximum(history[target_col].to_numpy(float), 1e-6)) - np.log(centers)
+        residual_log = _prequential_residuals(history, model_name, target_col) if use_prequential_residual else in_sample_residual
+        if np.isfinite(residual_log).sum() < 3:
+            residual_log = in_sample_residual
+        valid_residual = residual_log[np.isfinite(residual_log)]
+        smear_factor = float(np.mean(np.exp(valid_residual))) if len(valid_residual) else 1.0
+    valid_residual = np.asarray(residual_log, dtype=float)[np.isfinite(residual_log)]
+    if len(valid_residual) < 3:
+        residual_log = np.zeros(len(history), dtype=float)
+        valid_residual = residual_log
+    quantiles = tuple(float(x) for x in np.quantile(valid_residual, [0.05, 0.10, 0.50, 0.90, 0.95]))
     return DemandFit(
         category=category,
         model_name=model_name,
@@ -241,7 +302,7 @@ def run_demand_backtests(
                 if len(train) < 120 or len(test) < 2:
                     continue
                 for model_name in DEMAND_MODELS:
-                    model = fit_demand_model(train, cat, model_name, target_col)
+                    model = fit_demand_model(train, cat, model_name, target_col, use_prequential_residual=False)
                     distribution = predict_distribution(model, test["销售日期"])
                     actual = test[target_col].to_numpy(float)
                     metrics = _metrics(actual, distribution, train[target_col].to_numpy(float))
