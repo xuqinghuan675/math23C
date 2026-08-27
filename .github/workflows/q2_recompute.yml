@@ -1,0 +1,44 @@
+name: q2-recompute
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '问题二/脚本/**'
+      - '.github/workflows/q2_recompute.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  recompute:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pandas numpy openpyxl matplotlib
+
+      - name: Recompute question 2
+        run: python '问题二/脚本/求解问题二_分层稳健.py'
+
+      - name: Commit regenerated results
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add '问题二/结果/'
+          if git diff --cached --quiet; then
+            echo 'No result changes to commit.'
+          else
+            git commit -m 'chore(q2): recompute results after price response refactor'
+            git push
+          fi
