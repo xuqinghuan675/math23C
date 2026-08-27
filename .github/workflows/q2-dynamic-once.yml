@@ -44,3 +44,4 @@ jobs:
             git commit -m "重算问题二动态七日定价方案 [skip q2-dynamic]"
             git push
           fi
+# rerun after root-path fix
