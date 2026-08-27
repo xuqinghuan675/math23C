@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """2023 C题问题二：分层稳健定价 + 报童补货。
 
-本脚本复用 `求解问题二.py` 的数据读取、审计、成本预测和正常销售价格回归，
-但把两个不同任务明确拆开：
-
+正式职责拆分：
 1. 基础需求：用全量有效净销量，仅根据星期、月份和可选趋势预测；
-2. 价格响应：只用正常销售数据估计价格弹性；
-3. 对价格关系可靠的品类，在正常销售历史 IQR 内做局部利润优化；
-4. 对价格关系不可靠的品类，采用正常销售历史中位加成；
-5. 所有品类均用同一随机需求分布下的报童分位数确定补货量。
+2. 价格响应：正常销售数据上比较半对数与对数-对数模型，但定价主模型采用半对数；
+3. 半对数模型只有在滚动回测不过度劣化、价格系数显著为负且方向稳定时，才进入利润型定价；
+4. 对价格关系不可靠的品类，采用同星期条件中位加成；
+5. 所有品类均用随机需求分布下的损耗修正报童分位数确定补货量。
 
-这样避免“折扣价污染正常价格关系”，也避免把所有品类都退化为固定中位定价。
+选择半对数作为定价主响应不是为了制造内部最优点，而是因为
+log(D)=a+bP 的价格弹性 bP 会随价格变化；当 b<0 时，价格升高会逐渐增强需求收缩，
+避免常弹性模型在 |elasticity|<1 时产生无界提价倾向。对数-对数模型继续保留为
+滚动预测基准，用于检查半对数形式是否明显损失样本外拟合能力。
 """
 
 from __future__ import annotations
@@ -158,70 +159,223 @@ def base_demand_samples(
     return np.exp(eta + residual_draws)
 
 
-def evaluate_candidate(
-    base_samples: np.ndarray,
-    price: float,
-    reference_price: float,
-    beta: float,
-    future_cost: float,
-    loss_rate: float,
-) -> dict | None:
-    effective_cost = future_cost / (1.0 - loss_rate)
-    if price <= effective_cost or price <= 0 or reference_price <= 0:
-        return None
+# ---------------------------
+# 价格响应模型：半对数主模型 + 对数-对数基准
+# ---------------------------
 
-    ratio = max(price / reference_price, 1e-8)
-    demand = base_samples * (ratio ** beta)
-    fractile = float(np.clip(1.0 - effective_cost / price, 0.001, 0.999))
-    target_sellable = float(np.quantile(demand, fractile))
-    order = max(0.1, round(target_sellable / (1.0 - loss_rate), 1))
-    sellable = order * (1.0 - loss_rate)
-    sales = np.minimum(demand, sellable)
+def _price_design(
+    frame: pd.DataFrame,
+    include_trend: bool,
+    response_model: str,
+) -> tuple[np.ndarray, list[str]]:
+    x = pd.DataFrame(index=frame.index)
+    if response_model == "半对数":
+        x["价格项"] = frame["日平均售价"].astype(float)
+    elif response_model == "对数-对数":
+        x["价格项"] = np.log(frame["日平均售价"].astype(float))
+    else:
+        raise ValueError(f"未知价格响应模型: {response_model}")
+    names = ["价格项"]
+    for weekday in range(2, 8):
+        name = f"星期{weekday}"
+        x[name] = (frame["星期"] == weekday).astype(float)
+        names.append(name)
+    for month in range(2, 13):
+        name = f"月份{month}"
+        x[name] = (frame["月份"] == month).astype(float)
+        names.append(name)
+    if include_trend:
+        x["时间趋势"] = frame["时间趋势"].astype(float)
+        names.append("时间趋势")
+    x.insert(0, "常数项", 1.0)
+    names.insert(0, "常数项")
+    return x[names].to_numpy(float), names
+
+
+def _fit_price_response(
+    frame: pd.DataFrame,
+    include_trend: bool,
+    response_model: str,
+) -> dict:
+    """OLS 点估计 + 7 阶 Newey-West/HAC 协方差。"""
+    x, names = _price_design(frame, include_trend, response_model)
+    y = np.log(frame["日销售量"].astype(float).to_numpy())
+    params = np.linalg.lstsq(x, y, rcond=None)[0]
+    residuals = y - x @ params
+
+    xtx_inv = np.linalg.pinv(x.T @ x)
+    scores = x * residuals[:, None]
+    meat = scores.T @ scores
+    lag_count = min(7, max(0, len(frame) - 1))
+    for lag in range(1, lag_count + 1):
+        weight = 1.0 - lag / (lag_count + 1.0)
+        cross = scores[lag:].T @ scores[:-lag]
+        meat += weight * (cross + cross.T)
+    covariance = xtx_inv @ meat @ xtx_inv
+    standard_errors = np.sqrt(np.maximum(np.diag(covariance), 0.0))
+    price_idx = names.index("价格项")
+    beta = float(params[price_idx])
+    se = float(standard_errors[price_idx])
+    z = beta / se if se > 0 else 0.0
+    p_value = float(math.erfc(abs(z) / math.sqrt(2.0)))
+
     return {
-        "售价": float(price),
-        "加成率": float(price / future_cost - 1.0),
-        "预测需求量": float(demand.mean()),
-        "补货量": float(order),
-        "预计满足量": float(sales.mean()),
-        "预计利润": float(np.mean(price * sales - future_cost * order)),
-        "临界分位数": fractile,
+        "价格响应模型": response_model,
+        "含时间趋势": bool(include_trend),
+        "价格系数": beta,
+        "稳健标准误": se,
+        "稳健概率值": p_value,
+        "稳健区间下限": beta - 1.96 * se,
+        "稳健区间上限": beta + 1.96 * se,
+        "系数": params,
+        "设计列": names,
+        "残差": residuals,
+        "平滑还原因子": float(np.mean(np.exp(residuals))),
+        "样本数": int(len(frame)),
     }
 
 
-def reliability_table(
+def _predict_price_response(spec: dict, frame: pd.DataFrame) -> np.ndarray:
+    x, names = _price_design(
+        frame,
+        bool(spec["含时间趋势"]),
+        str(spec["价格响应模型"]),
+    )
+    if names != spec["设计列"]:
+        raise ValueError("价格响应训练与预测矩阵不一致")
+    eta = x @ np.asarray(spec["系数"], dtype=float)
+    return np.exp(eta) * float(spec["平滑还原因子"])
+
+
+def price_response_backtest(
     panel_normal: pd.DataFrame,
-    normal_detail: pd.DataFrame,
-    normal_selected: dict,
-    normal_specs: dict,
-) -> tuple[pd.DataFrame, dict]:
-    rows = []
+) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame, dict]:
+    """比较半对数/对数-对数及是否带趋势，并决定定价响应是否可靠。
+
+    规则：
+    - 对数-对数是预测基准；半对数是唯一允许进入定价优化的函数形式；
+    - 每种函数内部仍由滚动 WAPE 选择是否保留趋势（趋势至少改善 5% 才保留）；
+    - 半对数最终规格必须 beta<0、HAC p<0.05，且至少 7/8 回测折价格系数为负；
+    - 同时半对数滚动 WAPE 不得比对数-对数基准恶化超过 max(0.01, 10%)；
+      若明显劣化，则不强行用它做定价，回退到条件中位加成。
+    """
+    detail_rows: list[dict] = []
+    summary_rows: list[dict] = []
+    specs: dict[str, dict] = {}
+    reliability_rows: list[dict] = []
     reliable: dict[str, bool] = {}
+
     for cat in CATEGORIES:
-        selected_name = base.demand_model_name(bool(normal_selected[cat]))
-        folds = normal_detail[
-            (normal_detail["品类"] == cat) & (normal_detail["模型"] == selected_name)
-        ]
-        spec = normal_specs[cat]
-        beta = float(spec["价格系数"])
-        p = float(spec["稳健概率值"])
-        negative_folds = int((folds["价格系数"] < 0).sum())
-        fold_count = int(len(folds))
-        ok = bool(beta < 0 and p < 0.05 and negative_folds >= max(1, fold_count - 1))
+        frame = panel_normal[panel_normal["品类"] == cat].sort_values("销售日期").copy()
+        cutoffs = base.validation_cutoffs(frame)
+        if not cutoffs:
+            raise ValueError(f"{cat} 没有足够样本进行价格响应滚动回测")
+
+        chosen_by_form: dict[str, tuple[bool, float, list[float]]] = {}
+        full_by_form: dict[str, dict] = {}
+
+        for response_model in ("半对数", "对数-对数"):
+            scores: dict[bool, float] = {}
+            fold_betas: dict[bool, list[float]] = {}
+            for include_trend in (False, True):
+                total_abs = 0.0
+                total_actual = 0.0
+                betas: list[float] = []
+                for cutoff in cutoffs:
+                    train = frame[frame["销售日期"] <= cutoff]
+                    test = frame[
+                        (frame["销售日期"] > cutoff)
+                        & (frame["销售日期"] <= cutoff + pd.Timedelta(days=7))
+                    ]
+                    spec = _fit_price_response(train, include_trend, response_model)
+                    pred = _predict_price_response(spec, test)
+                    actual = test["日销售量"].to_numpy(float)
+                    error = actual - pred
+                    total_abs += float(np.abs(error).sum())
+                    total_actual += float(actual.sum())
+                    betas.append(float(spec["价格系数"]))
+                    detail_rows.append(
+                        {
+                            "品类": cat,
+                            "价格响应模型": response_model,
+                            "含时间趋势": "是" if include_trend else "否",
+                            "验证截止日": cutoff.date().isoformat(),
+                            "WAPE": float(np.abs(error).sum() / actual.sum()),
+                            "MAE": float(np.abs(error).mean()),
+                            "RMSE": float(np.sqrt(np.mean(error**2))),
+                            "价格系数": float(spec["价格系数"]),
+                        }
+                    )
+                scores[include_trend] = total_abs / total_actual
+                fold_betas[include_trend] = betas
+
+            plain = float(scores[False])
+            trend = float(scores[True])
+            chosen_trend = bool(trend < 0.95 * plain)
+            chosen_wape = float(scores[chosen_trend])
+            chosen_betas = fold_betas[chosen_trend]
+            full_spec = _fit_price_response(frame, chosen_trend, response_model)
+            chosen_by_form[response_model] = (chosen_trend, chosen_wape, chosen_betas)
+            full_by_form[response_model] = full_spec
+
+            summary_rows.append(
+                {
+                    "品类": cat,
+                    "价格响应模型": response_model,
+                    "最终含趋势": "是" if chosen_trend else "否",
+                    "滚动WAPE": chosen_wape,
+                    "全样本价格系数": float(full_spec["价格系数"]),
+                    "全样本稳健p值": float(full_spec["稳健概率值"]),
+                    "负向回测折数": int(sum(beta < 0 for beta in chosen_betas)),
+                    "回测折数": int(len(chosen_betas)),
+                }
+            )
+
+        semi_trend, semi_wape, semi_betas = chosen_by_form["半对数"]
+        loglog_trend, loglog_wape, _ = chosen_by_form["对数-对数"]
+        semi_spec = full_by_form["半对数"]
+        semi_negative = int(sum(beta < 0 for beta in semi_betas))
+        fold_count = int(len(semi_betas))
+        tolerance = max(0.01, 0.10 * loglog_wape)
+        prediction_ok = bool(semi_wape <= loglog_wape + tolerance)
+        statistical_ok = bool(
+            float(semi_spec["价格系数"]) < 0
+            and float(semi_spec["稳健概率值"]) < 0.05
+            and semi_negative >= max(1, fold_count - 1)
+        )
+        ok = bool(prediction_ok and statistical_ok)
         reliable[cat] = ok
-        rows.append(
+        specs[cat] = semi_spec
+
+        # 为解释保留参考价处的点弹性；半对数弹性随价格变化，不再把 beta 本身称为弹性。
+        reference_price = float(frame["日平均售价"].median())
+        reference_elasticity = float(semi_spec["价格系数"] * reference_price)
+        reliability_rows.append(
             {
                 "品类": cat,
-                "正常销售价格弹性": beta,
-                "稳健概率值": p,
-                "负向回测折数": negative_folds,
+                "价格响应模型": "半对数",
+                "半对数价格系数": float(semi_spec["价格系数"]),
+                "参考中位售价": reference_price,
+                "参考价处价格弹性": reference_elasticity,
+                "稳健概率值": float(semi_spec["稳健概率值"]),
+                "负向回测折数": semi_negative,
                 "回测折数": fold_count,
+                "半对数滚动WAPE": semi_wape,
+                "对数-对数基准WAPE": loglog_wape,
+                "相对基准WAPE差": semi_wape - loglog_wape,
+                "预测不过度劣化": "是" if prediction_ok else "否",
                 "价格关系可靠": "是" if ok else "否",
-                "处理": "正常销售IQR内局部利润优化" if ok else "正常销售历史中位加成",
+                "处理": "半对数局部利润优化" if ok else "同星期条件中位加成",
             }
         )
-    df = pd.DataFrame(rows)
-    base.write_csv(df, "价格关系可靠性_分层稳健.csv")
-    return df, reliable
+
+    detail = pd.DataFrame(detail_rows)
+    summary = pd.DataFrame(summary_rows)
+    reliability_df = pd.DataFrame(reliability_rows)
+    base.write_csv(detail, "价格响应模型回测明细_分层稳健.csv")
+    base.write_csv(summary, "价格响应模型回测汇总_分层稳健.csv")
+    base.write_csv(reliability_df, "价格关系可靠性_分层稳健.csv")
+    return detail, summary, specs, reliability_df, reliable
 
 
 def optimize_hybrid(
@@ -235,143 +389,8 @@ def optimize_hybrid(
     reliable: dict,
     first_date: pd.Timestamp,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    rng = np.random.default_rng(RANDOM_SEED)
-    rows = []
-    diagnostics = []
-
-    for cat in CATEGORIES:
-        cost_frame = panel_all[panel_all["品类"] == cat].sort_values("销售日期")
-        costs = base.cost_forecast(
-            cost_frame, FUTURE_DATES, selected_cost_methods[cat]
-        )
-        price_spec = normal_specs[cat]
-        beta_point = float(price_spec["价格系数"])
-        beta_low = float(price_spec["稳健区间下限"])
-        info = markup_info[cat]["正常销售"]
-        q25 = float(info["百分之二十五分位"])
-        median = float(info["中位数"])
-        q75 = float(info["百分之七十五分位"])
-
-        for date in FUTURE_DATES:
-            future_cost = float(costs.loc[date])
-            reference_price = float(np.round(future_cost * (1.0 + median), 2))
-            residual_draws = rng.choice(
-                np.asarray(base_specs[cat]["残差"], dtype=float),
-                size=SAMPLE_COUNT,
-                replace=True,
-            )
-            base_samples = base_demand_samples(
-                base_specs[cat], date, residual_draws, first_date
-            )
-
-            if reliable[cat]:
-                low = math.floor(q25 * 100.0) / 100.0
-                high = math.ceil(q75 * 100.0) / 100.0
-                markups = np.arange(low, high + 0.0001, 0.01)
-                candidates = []
-                for markup in markups:
-                    price = float(np.round(future_cost * (1.0 + markup), 2))
-                    beta_used = beta_low if price >= reference_price else beta_point
-                    item = evaluate_candidate(
-                        base_samples,
-                        price,
-                        reference_price,
-                        beta_used,
-                        future_cost,
-                        category_loss[cat],
-                    )
-                    if item is not None:
-                        candidates.append(item)
-                if not candidates:
-                    raise ValueError(f"{cat} {date.date()} 没有有效价格候选")
-                best = max(candidates, key=lambda x: x["预计利润"])
-                pricing_basis = "价格关系稳定：正常销售IQR内局部稳健利润优化"
-                local_upper = float(np.round(future_cost * (1.0 + high), 2))
-                boundary = abs(best["售价"] - local_upper) <= 0.011
-            else:
-                item = evaluate_candidate(
-                    base_samples,
-                    reference_price,
-                    reference_price,
-                    0.0,
-                    future_cost,
-                    category_loss[cat],
-                )
-                if item is None:
-                    raise ValueError(f"{cat} {date.date()} 历史中位价低于有效成本")
-                best = item
-                pricing_basis = "价格关系证据不足：采用正常销售历史中位加成"
-                boundary = False
-
-            base_mean = float(base_samples.mean())
-            mean_order = max(
-                0.1, round(base_mean / (1.0 - category_loss[cat]), 1)
-            )
-            baseline_sellable = mean_order * (1.0 - category_loss[cat])
-            baseline_sales = np.minimum(base_samples, baseline_sellable)
-            baseline_profit = float(
-                np.mean(reference_price * baseline_sales - future_cost * mean_order)
-            )
-
-            rows.append(
-                {
-                    "日期": date.date().isoformat(),
-                    "品类": cat,
-                    "预测批发价": future_cost,
-                    "损耗率（百分数）": category_loss[cat] * 100.0,
-                    "价格关系可靠": "是" if reliable[cat] else "否",
-                    "正常销售价格弹性": beta_point,
-                    "参考中位售价": reference_price,
-                    "建议成本加成率（百分数）": best["加成率"] * 100.0,
-                    "建议售价": best["售价"],
-                    "预测需求量": best["预测需求量"],
-                    "建议补货量": best["补货量"],
-                    "预计满足量": best["预计满足量"],
-                    "临界分位数": best["临界分位数"],
-                    "预计利润": best["预计利润"],
-                    "是否触及局部上界": "是" if boundary else "否",
-                    "定价依据": pricing_basis,
-                }
-            )
-            diagnostics.append(
-                {
-                    "日期": date.date().isoformat(),
-                    "品类": cat,
-                    "参考中位售价": reference_price,
-                    "参考平均需求补货利润": baseline_profit,
-                    "最终建议利润": best["预计利润"],
-                    "相对基准改善": best["预计利润"] - baseline_profit,
-                    "基础需求均值": base_mean,
-                    "价格关系可靠": "是" if reliable[cat] else "否",
-                }
-            )
-
-    result = pd.DataFrame(rows).sort_values(["日期", "品类"]).reset_index(drop=True)
-    diag = pd.DataFrame(diagnostics).sort_values(["日期", "品类"]).reset_index(drop=True)
-
-    round2 = [
-        "预测批发价",
-        "损耗率（百分数）",
-        "参考中位售价",
-        "建议成本加成率（百分数）",
-        "建议售价",
-        "预测需求量",
-        "建议补货量",
-        "预计满足量",
-        "预计利润",
-    ]
-    export = result.copy()
-    for col in round2:
-        export[col] = export[col].round(2)
-    export["正常销售价格弹性"] = export["正常销售价格弹性"].round(4)
-    export["临界分位数"] = export["临界分位数"].round(4)
-    base.write_csv(export, "七天六品类最终策略_分层稳健.csv")
-
-    diag_export = diag.copy()
-    for col in ["参考中位售价", "参考平均需求补货利润", "最终建议利润", "相对基准改善", "基础需求均值"]:
-        diag_export[col] = diag_export[col].round(2)
-    base.write_csv(diag_export, "策略分解_分层稳健.csv")
-    return result, diag
+    """占位实现；正式入口会由 `动态定价.py` 覆盖。"""
+    raise RuntimeError("正式入口未绑定动态定价模块")
 
 
 def write_summary(
@@ -393,24 +412,23 @@ def write_summary(
         "",
         "## 主结论",
         "",
-        "本版把“预测这一天总共会卖多少”和“正常售价变化会怎样影响销量”拆成两个模型：",
+        "本版把‘预测这一天总共会卖多少’与‘改变正常售价后需求怎样变化’拆成两个模型：",
         "",
         "- 基础需求：使用全量有效净销量，只控制星期、月份和必要趋势；",
-        "- 价格响应：只使用正常销售记录估计价格弹性；",
-        "- 价格关系可靠的品类：仅在正常销售历史 IQR（25%~75%）内做局部稳健利润优化；",
-        "- 价格关系不可靠的品类：采用正常销售历史中位加成；",
+        "- 价格响应：正常销售数据上以对数-对数作为预测基准，半对数作为定价主函数；",
+        "- 半对数只有在滚动预测不过度劣化、价格系数显著为负且跨折稳定时才进入利润优化；",
+        "- 价格关系可靠的品类：在同星期中央经营带内做局部利润优化；",
+        "- 价格关系不可靠的品类：采用同星期条件中位加成；",
         "- 所有品类：使用损耗修正后的报童分位数确定补货量。",
         "",
         f"模型预计七天总利润：**{total_profit:.2f} 元**。",
         f"局部定价优化品类：{'、'.join(reliable_cats) if reliable_cats else '无'}。",
         f"保守中位定价品类：{'、'.join(conservative_cats) if conservative_cats else '无'}。",
-        f"42 条策略中触及局部 IQR 上界：**{upper_hits} 条**；该标记表示约束内最优，不宣称无约束全局最优。",
+        f"42 条策略中触及局部经营带上界：**{upper_hits} 条**。",
         "",
-        "## 为什么比上一版更适合论文",
+        "## 为什么使用半对数定价响应",
         "",
-        "上一版用正常销售数据同时承担需求预测和价格响应，剔除折扣后部分品类预测误差反而上升；本版用全量真实净销量预测基础需求，仅让正常销售数据识别价格响应，从而同时保留真实需求规模和干净的正常价格关系。",
-        "",
-        "对于价格关系可靠的品类，不再使用 5%~95% 甚至 1%~99% 的宽边界追逐高价，而限制在历史最常见的中间 50% 经营区间，并对提价使用更保守的价格弹性下界。对于关系不可靠的品类，不伪造精确最优价。",
+        "对数-对数常弹性模型在绝对弹性小于 1 时，会让利润函数在较宽价格区间持续偏向高价，容易把最优解机械推到人为边界。半对数模型 log(D)=a+bP+controls 在 b<0 时的点弹性为 bP，会随价格上升而增强需求收缩，因此更适合有限价格区间内的经营定价。为避免为了得到内部峰值而牺牲拟合，本版仍把对数-对数作为滚动预测基准；半对数若样本外误差明显更差，则直接判定该品类不适合做利润型价格优化。",
         "",
         "## 进价模型",
         "",
@@ -421,7 +439,7 @@ def write_summary(
         "",
         "## 论文表述边界",
         "",
-        "价格系数是控制星期、月份后的条件关联，不是严格因果。历史销量仍可能受缺货影响；题目没有给出库存、预算、货架容量和包装约束，因此按品类独立决策。所谓“最优”均指在给定历史常规经营区间和模型假设下的局部稳健方案。",
+        "价格系数是控制星期、月份后的条件关联，不是严格因果；半对数相对于对数-对数的作用首先是改善定价函数的结构合理性，并不把观察性回归包装成因果效应。历史销量仍可能受缺货影响；题目没有给出库存、预算、货架容量和包装约束，因此按品类独立决策。所谓‘最优’均指在给定历史常规经营区间和模型假设下的局部稳健方案。",
         "",
         "完整 42 条结果见 `结果/七天六品类最终策略_分层稳健.csv`。",
     ]
@@ -444,11 +462,8 @@ def main() -> None:
     base.discount_audit(merged)
     markups = base.markup_summary(panel_all, panel_normal)
 
-    normal_detail, _normal_summary, normal_selected, normal_specs = base.demand_backtest(
-        panel_normal, "正常销售"
-    )
-    reliability, reliable = reliability_table(
-        panel_normal, normal_detail, normal_selected, normal_specs
+    _price_detail, _price_summary, normal_specs, reliability, reliable = price_response_backtest(
+        panel_normal
     )
 
     base_summary, base_specs = base_demand_backtest(panel_all)
@@ -470,7 +485,11 @@ def main() -> None:
     print("分层稳健问题二已完成")
     print(f"7天42条预计利润合计: {result['预计利润'].sum():.2f} 元")
     print("价格可靠性:")
-    print(reliability[["品类", "价格关系可靠", "正常销售价格弹性", "稳健概率值"]].to_string(index=False))
+    print(
+        reliability[
+            ["品类", "价格关系可靠", "半对数价格系数", "参考价处价格弹性", "稳健概率值"]
+        ].to_string(index=False)
+    )
 
 
 if __name__ == "__main__":
