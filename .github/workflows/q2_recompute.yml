@@ -2,6 +2,9 @@ name: q2-recompute
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/q2_recompute.yml'
 
 permissions:
   contents: write
@@ -34,6 +37,6 @@ jobs:
           if git diff --cached --quiet; then
             echo 'No result changes to commit.'
           else
-            git commit -m 'chore(q2): recompute results after price response refactor'
+            git commit -m 'chore(q2): recompute final pricing results'
             git push
           fi
