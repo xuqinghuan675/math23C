@@ -29,7 +29,7 @@ def test_attachment_counts_and_core_audit():
 def test_audit_has_conservation_and_gap_evidence():
     audit_table = pd.read_csv(OUT / "01_数据审计.csv", encoding="utf-8-sig")
     connection = pd.read_csv(OUT / "01_附件连接审计.csv", encoding="utf-8-sig")
-    assert len(audit_table) >= 20
+    assert len(audit_table) == 69
     assert (connection["是否通过"].fillna("是") == "是").all()
     conservation = connection[connection["检查类别"].fillna("") == "各品类守恒"]
     assert len(conservation) == 36
