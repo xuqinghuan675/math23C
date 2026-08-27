@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
 """问题二逐日局部稳健定价层。
 
-本层只负责“给定未来基础需求与批发成本后，如何把价格响应转成可解释的逐日定价”。
-
 核心原则：
-1. 定价主响应改用半对数需求：log(D)=...+bP。相对参考价 P0 的需求修正为
-   D(P)=D0*exp[b(P-P0)]。当 b<0 时，高价处价格弹性会随价格绝对值增大，
-   从函数结构上避免常弹性模型在 |elasticity|<1 时出现“价格越高利润越高”的无界倾向；
-2. 对数—对数模型仅作为价格响应预测基准，不再直接决定最优售价；
-3. 每天的参考加成率来自最近一年“同星期正常销售加成率”的条件中位数，并向全局中位数收缩；
-4. 可靠品类只在同星期正常销售 35%~65% 分位中央经营带内搜索；不可靠品类采用同星期条件中位加成；
-5. 搜索网格严格落在真实经营带 [low, high] 内，不再用 floor/ceil 扩张边界；
-6. 成本预测允许动态模型与水平模型滚动回测竞争，因此日售价变化来自有数据依据的成本路径和星期经营规律。
+1. 定价响应只允许使用可形成有限价格响应的局部半对数模型：
+   - 半对数售价：log(D)=...+bP；
+   - 半对数加成：log(D)=...+bm，其中 m=P/C-1；
+   两者由上游滚动回测和稳健性门槛决定，而不是为了得到内部最优点人工指定；
+2. 对数-对数模型只作为滚动预测基准，不直接进入利润优化；
+3. 提价时使用价格系数 95% 稳健区间下限（更负）计算需求，降价时使用区间上限，
+   形成参数不确定性下的保守利润搜索；
+4. 每天参考加成率来自最近一年同星期正常销售加成率，并向全局分布收缩；
+5. 可靠品类只在同星期 35%~65% 中央经营带内搜索；不可靠品类采用条件中位加成；
+6. 最终售价按 0.01 元粒度，并严格落在真实经营带对应的分币价格范围内。
 """
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import pandas as pd
@@ -62,27 +64,67 @@ def _weekday_local_band(
     return low, center, high, int(len(same))
 
 
-def _markup_grid(low: float, high: float, step: float = 0.005) -> np.ndarray:
-    """构造严格位于 [low, high] 的加成率候选，并强制包含真实上下界。"""
-    if high <= low:
-        return np.asarray([float(low)], dtype=float)
-    inner = np.arange(low, high + 1e-12, step, dtype=float)
-    values = np.r_[low, inner[(inner > low) & (inner < high)], high]
-    return np.unique(np.round(values, 10))
+def _cent_price_grid(
+    future_cost: float,
+    low_markup: float,
+    high_markup: float,
+    step_markup: float = 0.005,
+) -> tuple[np.ndarray, float, float]:
+    """构造严格落在经营带内的 0.01 元售价候选。"""
+    low_price_raw = future_cost * (1.0 + low_markup)
+    high_price_raw = future_cost * (1.0 + high_markup)
+    low_price = math.ceil((low_price_raw - 1e-10) * 100.0) / 100.0
+    high_price = math.floor((high_price_raw + 1e-10) * 100.0) / 100.0
+    if high_price < low_price:
+        midpoint = float(np.round((low_price_raw + high_price_raw) / 2.0, 2))
+        return np.asarray([midpoint], dtype=float), midpoint, midpoint
+
+    markups = np.arange(low_markup, high_markup + step_markup * 0.25, step_markup)
+    raw_prices = future_cost * (1.0 + markups)
+    prices = np.round(raw_prices, 2)
+    prices = prices[(prices >= low_price - 1e-12) & (prices <= high_price + 1e-12)]
+    prices = np.r_[prices, low_price, high_price]
+    prices = np.unique(np.round(prices, 2))
+    return prices, float(low_price), float(high_price)
 
 
-def _demand_multiplier(price: float, reference_price: float, spec: dict) -> float:
-    """根据入选价格响应规格计算相对参考价的需求倍率。"""
-    model = str(spec.get("价格响应模型", "半对数"))
-    beta = float(spec["价格系数"])
-    if model == "半对数":
-        # log D = ... + beta * P
-        exponent = float(np.clip(beta * (price - reference_price), -6.0, 6.0))
-        return float(np.exp(exponent))
-    if model == "对数-对数":
-        ratio = max(price / reference_price, 1e-8)
-        return float(ratio ** beta)
-    raise ValueError(f"未知价格响应模型: {model}")
+def _response_term(
+    price: float,
+    reference_price: float,
+    future_cost: float,
+    response_model: str,
+) -> float:
+    if response_model == "半对数售价":
+        return float(price - reference_price)
+    if response_model == "半对数加成":
+        markup = price / future_cost - 1.0
+        reference_markup = reference_price / future_cost - 1.0
+        return float(markup - reference_markup)
+    if response_model == "对数-对数售价":
+        return float(math.log(max(price / reference_price, 1e-8)))
+    raise ValueError(f"未知价格响应模型: {response_model}")
+
+
+def _robust_beta(term_delta: float, spec: dict) -> float:
+    """选择使候选需求更保守的价格系数。"""
+    point = float(spec["价格系数"])
+    low = float(spec.get("稳健区间下限", point))
+    high = float(spec.get("稳健区间上限", point))
+    # term_delta>0 表示提价/提高加成；更负的系数给出更低需求。
+    return low if term_delta >= 0 else high
+
+
+def _demand_multiplier(
+    price: float,
+    reference_price: float,
+    future_cost: float,
+    spec: dict,
+) -> float:
+    response_model = str(spec.get("价格响应模型", "半对数售价"))
+    delta = _response_term(price, reference_price, future_cost, response_model)
+    beta = _robust_beta(delta, spec)
+    exponent = float(np.clip(beta * delta, -6.0, 6.0))
+    return float(np.exp(exponent))
 
 
 def _evaluate_price_candidate(
@@ -93,12 +135,13 @@ def _evaluate_price_candidate(
     future_cost: float,
     loss_rate: float,
 ) -> dict | None:
-    """在既有报童补货模型上，仅替换价格到需求的映射。"""
     effective_cost = future_cost / (1.0 - loss_rate)
     if price <= effective_cost or price <= 0 or reference_price <= 0:
         return None
 
-    demand = base_samples * _demand_multiplier(price, reference_price, price_spec)
+    demand = base_samples * _demand_multiplier(
+        price, reference_price, future_cost, price_spec
+    )
     fractile = float(np.clip(1.0 - effective_cost / price, 0.001, 0.999))
     target_sellable = float(np.quantile(demand, fractile))
     order = max(0.1, round(target_sellable / (1.0 - loss_rate), 1))
@@ -140,7 +183,8 @@ def optimize_hybrid(
         )
         price_spec = normal_specs[cat]
         beta_point = float(price_spec["价格系数"])
-        response_model = str(price_spec.get("价格响应模型", "半对数"))
+        response_model = str(price_spec.get("价格响应模型", "半对数售价"))
+        reference_elasticity = float(price_spec.get("参考价处价格弹性", np.nan))
 
         for date in CORE.FUTURE_DATES:
             future_cost = float(costs.loc[date])
@@ -157,12 +201,14 @@ def optimize_hybrid(
             )
 
             if reliable[cat] and beta_point < 0:
+                price_grid, _local_lower_price, local_upper_price = _cent_price_grid(
+                    future_cost, low, high, step_markup=0.005
+                )
                 candidates = []
-                for markup in _markup_grid(low, high, step=0.005):
-                    price = float(np.round(future_cost * (1.0 + float(markup)), 2))
+                for price in price_grid:
                     item = _evaluate_price_candidate(
                         base_samples,
-                        price,
+                        float(price),
                         reference_price,
                         price_spec,
                         future_cost,
@@ -173,12 +219,13 @@ def optimize_hybrid(
                 if not candidates:
                     raise ValueError(f"{cat} {date.date()} 没有有效逐日价格候选")
                 best = max(candidates, key=lambda x: x["预计利润"])
-                local_upper = float(np.round(future_cost * (1.0 + high), 2))
-                boundary = abs(best["售价"] - local_upper) <= 0.011
-                pricing_basis = f"{response_model}价格响应可靠：同星期中央经营带内逐日利润优化"
+                boundary = abs(best["售价"] - local_upper_price) <= 0.011
+                pricing_basis = f"{response_model}响应可靠：同星期中央经营带内稳健利润优化"
             else:
                 conservative_spec = dict(price_spec)
                 conservative_spec["价格系数"] = 0.0
+                conservative_spec["稳健区间下限"] = 0.0
+                conservative_spec["稳健区间上限"] = 0.0
                 best = _evaluate_price_candidate(
                     base_samples,
                     reference_price,
@@ -209,6 +256,7 @@ def optimize_hybrid(
                     "价格关系可靠": "是" if reliable[cat] else "否",
                     "价格响应模型": response_model,
                     "价格响应系数": beta_point,
+                    "参考价处价格弹性": reference_elasticity,
                     "同星期参考样本数": weekday_n,
                     "日局部加成下限（百分数）": low * 100.0,
                     "日条件参考加成（百分数）": center * 100.0,
@@ -252,6 +300,7 @@ def optimize_hybrid(
     for col in round2:
         export[col] = export[col].round(2)
     export["价格响应系数"] = export["价格响应系数"].round(6)
+    export["参考价处价格弹性"] = export["参考价处价格弹性"].round(4)
     export["临界分位数"] = export["临界分位数"].round(4)
     CORE.base.write_csv(export, "七天六品类最终策略_分层稳健.csv")
 
